@@ -20,7 +20,7 @@ Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite per
 - **Visual HTML reports** - Generate images for sharing
 - **Multi-provider support** - Anthropic, OpenAI, Gemini, MiniMax
 
-## 🚀 Quick Start (默认输出图片)
+## 🚀 Quick Start
 
 ```bash
 # Clone or install
@@ -29,33 +29,30 @@ cd llm-cost-monitor
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Run - generates image report by default
+python3 scripts/html_report.py
 ```
 
-### ⚡️ 使用方式
+## ⚡️ Usage
 
-**当用户询问用量时：**
-1. 先运行 `fetch_usage.py --today` 拉取最新数据
-2. 再生成图片报告 `html_report.py`
-3. 发送给用户
+**When user asks about usage:**
+1. Run `fetch_usage.py --today` to fetch latest session data
+2. Generate image report with `html_report.py`
+3. Send to user
 
 ```bash
-# 自动流程
+# Auto update + generate report
 python3 scripts/fetch_usage.py --today && python3 scripts/html_report.py
 ```
 
-### 输出模式
+### Output Modes
 
-| 场景 | 命令 | 输出 |
-|------|------|------|
-| **默认（用户未指定）** | `html_report.py` | 📊 图片 → 用户默认渠道 |
-| 用户要文本 | `report.py --text` | 📝 文本 → 用户默认渠道 |
-| 用户要JSON | `report.py --json` | 📋 JSON → 用户默认渠道 |
-
-**通知流程：**
-```
-html_report.py → 生成图片 → OpenClaw message 工具 → 用户默认渠道
-report.py --json → JSON → OpenClaw message 工具 → 用户默认渠道
-```
+| Scenario | Command | Output |
+|----------|---------|--------|
+| **Default** | `html_report.py` | 📊 Image → user's default channel |
+| User wants text | `report.py` | 📝 Text → user's default channel |
+| User wants JSON | `report.py --json` | 📋 JSON → user's default channel |
 
 ### Available Commands
 
@@ -63,23 +60,23 @@ report.py --json → JSON → OpenClaw message 工具 → 用户默认渠道
 # Fetch usage data from OpenClaw sessions
 python3 scripts/fetch_usage.py                    # Today's usage
 python3 scripts/fetch_usage.py --yesterday         # Yesterday
-python3 scripts/fetch_usage.py --last-days 7       # Last 7 days
+python3 scripts/fetch_usage.py --last-days 7      # Last 7 days
 
 # Text reports
-python3 scripts/report.py                          # Today's report
+python3 scripts/report.py                         # Today's report
 python3 scripts/report.py --period yesterday       # Yesterday
 python3 scripts/report.py --period week           # This week
-python3 scripts/report.py --period month           # This month
-python3 scripts/report.py --json                  # JSON output
+python3 scripts/report.py --period month          # This month
+python3 scripts/report.py --json                   # JSON output
 
 # Visual HTML report (generate image)
-python3 scripts/html_report.py                     # Generate HTML
+python3 scripts/html_report.py                    # Generate HTML
 python3 scripts/html_report.py --start 2026-01-01 --end 2026-01-31
 
 # Budget alerts
-python3 scripts/alert.py --budget-usd 50          # Check $50 budget (exit code 2 on breach)
+python3 scripts/alert.py --budget-usd 50         # Check $50 budget (exit code 2 on breach)
 python3 scripts/alert.py --budget-usd 100 --mode warn  # Just warn, don't exit
-python3 scripts/alert.py --budget-usd 10 --period week  # Check weekly budget
+python3 scripts/alert.py --budget-usd 10 --period week   # Check weekly budget
 ```
 
 ## 📊 Data Dimensions
@@ -91,6 +88,8 @@ The tracker stores and analyzes:
 | `date` | Usage date |
 | `provider` | API provider (anthropic, openai, gemini, etc.) |
 | `model` | Model name |
+| `app` | Application (openclaw, clawdbot) |
+| `source` | Data source (session, manual, api) |
 | `input_tokens` | Input tokens consumed |
 | `output_tokens` | Output tokens generated |
 | `cache_read_tokens` | Tokens read from cache (90% discount) |
@@ -122,6 +121,14 @@ daily = store.get_daily_summary("2026-02-01", "2026-02-17")
 # Get by model
 by_model = store.get_cost_by_model("2026-02-01", "2026-02-17")
 # Returns: {"claude-opus-4": 45.50, "gpt-4o": 23.20, ...}
+
+# Get by app
+by_app = store.get_by_app("2026-02-01", "2026-02-17")
+# Returns: {"openclaw": 100.50, "clawdbot": 20.30}
+
+# Get by source
+by_source = store.get_by_source("2026-02-01", "2026-02-17")
+# Returns: {"session": 120.80}
 ```
 
 ## 🔔 Budget Alerts
@@ -171,9 +178,11 @@ llm-cost-monitor/
 │   ├── store.py               # SQLite storage
 │   ├── report.py              # Text reports
 │   ├── html_report.py         # Visual HTML reports
-│   └── alert.py               # Budget alerts
+│   ├── alert.py               # Budget alerts
+│   └── notify.py             # Multi-channel notification
 └── examples/
-    └── cron_example.sh        # Cron examples
+    ├── report-sample.png       # Sample image output
+    └── cron_example.sh         # Cron examples
 ```
 
 ## 🤖 Automation
@@ -193,6 +202,18 @@ Add to your HEARTBEAT.md:
 ### LLM Cost Check (daily)
 - Run: python3 scripts/alert.py --budget-usd 10 --period yesterday --mode warn
 - If exit code 2, send alert to user
+```
+
+### OpenClaw Cron
+
+```json
+{
+  "name": "llm-cost-weekly-report",
+  "schedule": {"kind": "cron", "expr": "0 9 * * 1", "tz": "Asia/Shanghai"},
+  "payload": {"kind": "agentTurn", "message": "Run fetch_usage.py && html_report.py"},
+  "sessionTarget": "isolated",
+  "delivery": {"mode": "announce"}
+}
 ```
 
 ## 📝 Requirements
