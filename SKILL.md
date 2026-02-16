@@ -20,7 +20,7 @@ Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite per
 - **Visual HTML reports** - Generate images for sharing
 - **Multi-provider support** - Anthropic, OpenAI, Gemini, MiniMax
 
-## 🚀 Quick Start
+## 🚀 Quick Start (默认输出图片)
 
 ```bash
 # Clone or install
@@ -30,8 +30,22 @@ cd llm-cost-monitor
 # Install dependencies
 pip install -r requirements.txt
 
-# Run - that's it!
-python3 scripts/report.py
+# Run - 默认生成图片报告 (html_report.py)
+python3 scripts/html_report.py
+```
+
+### 输出模式
+
+| 场景 | 命令 | 输出 |
+|------|------|------|
+| **默认（用户未指定）** | `html_report.py` | 📊 图片 (发送飞书) |
+| 用户要文本 | `report.py --text` | 📝 文本 |
+| 用户要JSON | `report.py --json` | 📋 JSON |
+
+**通知流程：**
+```
+html_report.py → 生成图片 → OpenClaw message 工具 → 飞书
+report.py --json → JSON → OpenClaw message 工具 → 飞书
 ```
 
 ### Available Commands
