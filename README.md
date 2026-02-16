@@ -1,232 +1,147 @@
 # LLM Cost Monitor
 
-Track and monitor LLM API usage and costs across multiple providers.
+Track and monitor LLM API usage and costs from OpenClaw sessions.
 
 ## ✨ Features
 
-- **Multi-provider support**: OpenAI, Anthropic, Gemini
-- **Accurate cost calculation**: Uses real-time pricing from LiteLLM
-- **Cache token support**: Tracks Anthropic prompt caching discounts
-- **Budget alerts**: Get notified when usage exceeds thresholds
-- **Usage reports**: Daily, weekly, monthly breakdowns by model
-- **Local storage**: All data stays on your machine
-- **Cron automation**: Schedule automatic fetching and alerts
+- **No config required!** - Just install and run
+- **Automatic OpenClaw detection** - Reads session logs automatically
+- **Accurate cost tracking** - Uses real cost data when available, calculates otherwise
+- **Cache token support** - Tracks Anthropic prompt caching
+- **Daily/weekly/monthly reports** - Multiple time periods
+- **Budget alerts** - Monitor your spending
+- **Optional config** - Add external API monitoring later
 
-## 🚀 Quick Start
-
-### Installation
+## 🚀 Quick Start (No Config Needed!)
 
 ```bash
-# Clone the repository
+# Clone or install
 git clone https://github.com/VintLin/llm-cost-monitor.git
 cd llm-cost-monitor
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run report - that's it!
+python3 scripts/report.py
 ```
 
-### Configuration
-
-Edit `config/config.yaml`:
-
-```yaml
-providers:
-  openai:
-    keys:
-      - sk-your-openai-key-here
-  anthropic:
-    keys:
-      - your-anthropic-key-here
-    organization_id: your-org-id
-
-budget:
-  monthly_limit: 100  # USD
-  alert_threshold: 0.8  # Alert at 80% of budget
-  notify_channels:
-    - feishu
-
-storage:
-  path: ~/.llm-cost-monitor
-```
-
-### Fetch Usage
+### Available Commands
 
 ```bash
-# Today's usage
-python3 scripts/fetch_usage.py --today
+# Reports
+python3 scripts/report.py                    # Today's report
+python3 scripts/report.py --period yesterday # Yesterday
+python3 scripts/report.py --period week      # This week
+python3 scripts/report.py --period month     # This month
+python3 scripts/report.py --json             # JSON output
 
-# Yesterday
-python3 scripts/fetch_usage.py --yesterday
+# Budget alerts
+python3 scripts/alert.py --budget 50         # Check $50 budget
 
-# Last 7 days
-python3 scripts/fetch_usage.py --last-days 7
+# Fetch usage
+python3 scripts/fetch_usage.py               # Fetch today's data
+python3 scripts/fetch_usage.py --yesterday   # Fetch yesterday
+python3 scripts/fetch_usage.py --last-days 7 # Last 7 days
 ```
 
-### View Reports
-
-```bash
-# Today's report
-python3 scripts/report.py --today
-
-# Weekly summary
-python3 scripts/report.py --week
-
-# Monthly breakdown
-python3 scripts/report.py --month
-```
-
-## 📊 Examples
-
-### Daily Report
+## 📊 Example Output
 
 ```
-💰 LLM Cost Report - 2026-02-16
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Today: $12.45 (🟢 -5% vs yesterday)
+💰 LLM Cost Report - Today
+==================================================
+Period: 2026-02-16 to 2026-02-16
+
+Total Cost: $12.45
 
 📊 By Provider:
-• OpenAI: $8.20 (66%)
-• Anthropic: $4.25 (34%)
+  • anthropic: $8.20 (66%)
+  • openai: $4.25 (34%)
 
 📈 By Model:
-• gpt-4o: $5.50 (44%)
-• claude-sonnet-4: $4.25 (34%)
-• gpt-4o-mini: $2.70 (22%)
+  • claude-sonnet-4.5: $5.50 (44%)
+  • gpt-4o: $4.25 (34%)
+  • gpt-4o-mini: $2.70 (22%)
 
-📅 Month to Date: $342.50
-🎯 Budget: $100/mo (342% ⚠️)
+🎯 Budget: $12.45 / $100.00 (12%) ✅
 ```
 
-### JSON Output
+## ⚙️ Optional Configuration
 
-```bash
-$ python3 scripts/report.py --today --json
-{
-  "date": "2026-02-16",
-  "total_cost": 12.45,
-  "by_provider": {
-    "openai": 8.20,
-    "anthropic": 4.25
-  },
-  "by_model": {
-    "gpt-4o": 5.50,
-    "claude-sonnet-4": 4.25,
-    "gpt-4o-mini": 2.70
-  }
-}
-```
-
-## 🔧 Configuration
-
-### config.yaml
+Want to monitor external APIs too? Create `config/config.yaml`:
 
 ```yaml
+# Monitor external APIs (OPTIONAL)
 providers:
   openai:
-    # List of API keys to track
     keys:
-      - sk-proj-xxx1
-      - sk-proj-xxx2
-    # Optional: specific models to track
-    # models:
-    #   - gpt-4o
-    #   - gpt-4o-mini
-
+      - sk-your-openai-key
   anthropic:
     keys:
-      - sk-ant-api-xxx
-    # Required for Anthropic
-    organization_id: org-xxx
+      - your-anthropic-key
+    organization_id: your-org-id
 
-  # Coming soon
-  # gemini:
-  #   keys:
-  #     - your-gemini-key
-
+# Budget settings (OPTIONAL)
 budget:
-  # Monthly budget in USD
   monthly_limit: 100
-  # Send alert at this threshold (0.8 = 80%)
   alert_threshold: 0.8
-  # Notification channels
-  notify_channels:
-    - feishu
-    # - telegram
-    # - discord
 
-storage:
-  # Where to store database
-  path: ~/.llm-cost-monitor
-
-# Notification settings
-notifications:
-  feishu:
-    webhook_url: ""  # Your webhook
-  telegram:
-    bot_token: ""
-    chat_id: ""
+# Notifications (OPTIONAL)
+notify:
+  - feishu
+  # - telegram
 ```
+
+**Note:** Without config, the tool still works perfectly by reading OpenClaw sessions!
+
+## 📁 Project Structure
+
+```
+llm-cost-monitor/
+├── SKILL.md                    # Skill definition
+├── README.md                   # This file
+├── requirements.txt            # Python dependencies
+├── config/
+│   └── config.yaml.example    # Optional config template
+├── scripts/
+│   ├── fetch_usage.py         # Fetch usage data
+│   ├── calc_cost.py           # Cost calculation
+│   ├── store.py               # SQLite storage
+│   ├── report.py              # Generate reports
+│   └── alert.py               # Budget alerts
+└── examples/
+    └── cron.sh                # Cron examples
+```
+
+## 🔧 How It Works
+
+### Default Mode (No Config)
+1. Finds OpenClaw session files: `~/.openclaw/agents/*/sessions/*.jsonl`
+2. Parses each session for `usage` data
+3. Extracts: input_tokens, output_tokens, cache tokens, cost
+4. Stores in local SQLite database
+5. Generates reports
+
+### With Config (Optional)
+1. Same as default mode, plus:
+2. Fetches usage from external APIs (OpenAI, Anthropic)
+3. Aggregates all data together
+4. Sends alerts via webhook
 
 ## 🤖 Automation
 
-### Cron Jobs
-
+### Cron Job
 ```bash
 # Add to crontab (crontab -e)
-
-# Fetch usage daily at 11 PM
-0 23 * * * /path/to/scripts/fetch_usage.py --yesterday
-
-# Check budget and send alerts
-0 23 * * * /path/to/scripts/alert.py --budget 100
-
-# Weekly report every Monday
-0 9 * * 1 /path/to/scripts/report.py --week
+0 9 * * * /path/to/llm-cost-monitor/scripts/report.py
 ```
 
-### OpenClaw Integration
+## 📝 Requirements
 
-Add to HEARTBEAT.md:
+- Python 3.8+
+- pyyaml
+- requests
 
-```markdown
-### LLM Cost Check (Daily)
+## 📄 License
 
-- Run `python3 scripts/fetch_usage.py --yesterday`
-- Run `python3 scripts/report.py --today`
-```
-
-## 📈 Supported Models
-
-### OpenAI
-
-- GPT-5, GPT-5 Mini
-- GPT-4.1, GPT-4.1 Mini
-- GPT-4o, GPT-4o Mini, GPT-4o Audio
-- o1, o1 Mini, o1 Pro
-- GPT-4 Turbo, GPT-4
-- GPT-3.5 Turbo
-- DALL-E 3, Whisper
-
-### Anthropic
-
-- Claude 4 Opus, Claude 4 Sonnet
-- Claude 3.5 Sonnet, Claude 3.5 Haiku
-- Claude 3 Opus, Claude 3 Sonnet, Claude 3 Haiku
-
-### Gemini (Coming Soon)
-
-- Gemini 2.0 Flash
-- Gemini 1.5 Pro, Gemini 1.5 Flash
-
-## 🔐 Security
-
-- API keys are stored locally in `config/config.yaml`
-- No data is sent to external servers (except for usage fetching to providers)
-- All usage data is stored in local SQLite database
-- You can encrypt the config file for extra security
-
-## 📝 License
-
-MIT License - feel free to use and modify!
-
-## 🙏 Credits
-
-- Pricing data from [LiteLLM](https://github.com/BerriAI/litellm)
-- Inspired by api-usage, llm-token-tracker, and cost-report
+MIT

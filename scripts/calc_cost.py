@@ -46,6 +46,11 @@ MODEL_PRICING = {
     "claude-3-sonnet": {"input": 3.0, "output": 15.0, "cache_read": 0, "cache_creation": 0},
     "claude-3-haiku": {"input": 0.25, "output": 1.25, "cache_read": 0, "cache_creation": 0},
 
+    # MiniMax Models
+    "minimax": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
+    "minimax-m2.5": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
+    "MiniMax-M2.5": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
+
     # Gemini Models
     "gemini-2.0-flash-exp": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
     "gemini-2.0-flash-thinking-exp": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},

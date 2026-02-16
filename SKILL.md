@@ -1,6 +1,6 @@
 ---
 name: llm-cost-monitor
-description: Track and monitor LLM API usage and costs across multiple providers (OpenAI, Anthropic, Gemini). Features include cost calculation, budget alerts, and usage reports.
+description: Track and monitor LLM API usage and costs from OpenClaw sessions. Optional config for external API monitoring.
 metadata:
   {
     "openclaw": {
@@ -13,149 +13,116 @@ metadata:
 
 # LLM Cost Monitor
 
-Track and monitor LLM API usage and costs across multiple providers.
+Track and monitor LLM API usage and costs from OpenClaw sessions.
 
 ## Overview
 
-LLM Cost Monitor is a lightweight, non-invasive tool that helps you track and monitor your LLM API usage and costs across multiple providers (OpenAI, Anthropic, Gemini). It fetches usage data directly from provider APIs, calculates costs using up-to-date pricing, and provides budget alerts.
+LLM Cost Monitor helps you track and monitor your LLM API usage and costs. By default, it reads directly from OpenClaw session logs - no configuration required!
 
-## Use Cases
+**No config needed** - Just install and run!
 
-- **Track API spending** across multiple providers and API keys
-- **Budget alerts** - get notified when usage exceeds thresholds
-- **Usage reports** - daily, weekly, monthly cost breakdowns by model
-- **Cost optimization** - identify expensive models and usage patterns
-
-## Quick Start
-
-### 1. Configure API Keys
-
-Edit `config/config.yaml`:
-
-```yaml
-providers:
-  openai:
-    keys:
-      - sk-your-openai-key-here
-  anthropic:
-    keys:
-      - your-anthropic-key-here
-    organization_id: your-org-id
-
-budget:
-  monthly_limit: 100  # USD
-  alert_threshold: 0.8  # Alert at 80% of budget
-  notify_channels:
-    - feishu  # or telegram, discord
-
-storage:
-  path: ~/.llm-cost-monitor
-```
-
-### 2. Fetch Usage
-
-```bash
-# Fetch today's usage
-python3 scripts/fetch_usage.py --today
-
-# Fetch usage for a specific date
-python3 scripts/fetch_usage.py --date 2026-02-16
-
-# Fetch last 7 days
-python3 scripts/fetch_usage.py --last-days 7
-```
-
-### 3. View Reports
+## Quick Start (No Config Required!)
 
 ```bash
 # Today's cost report
-python3 scripts/report.py --today
+python3 scripts/report.py
 
-# Weekly report
-python3 scripts/report.py --week
+# Yesterday's report
+python3 scripts/report.py --period yesterday
 
-# Monthly report
-python3 scripts/report.py --month
+# Weekly summary
+python3 scripts/report.py --period week
 
-# JSON output for automation
-python3 scripts/report.py --today --json
+# Check budget
+python3 scripts/alert.py --budget 50
 ```
 
-### 4. Check Budget
+## With Optional Configuration
 
-```bash
-# Check if within budget (exit code 0 if OK, 2 if exceeded)
-python3 scripts/alert.py --budget 100
+Create `config/config.yaml` for advanced features:
 
-# Warn but don't fail
-python3 scripts/alert.py --budget 100 --mode warn
+```yaml
+# Optional: Monitor external APIs in addition to OpenClaw
+providers:
+  openai:
+    keys:
+      - sk-your-openai-key
+  anthropic:
+    keys:
+      - your-anthropic-key
+    organization_id: your-org-id
+
+# Optional: Budget settings
+budget:
+  monthly_limit: 100
+  alert_threshold: 0.8
+
+# Optional: Notification channels
+notify:
+  - feishu
+  # - telegram
 ```
 
 ## Features
 
-### Supported Providers
+### Default (No Config)
+- ✅ Read OpenClaw session logs automatically
+- ✅ Daily/weekly/monthly cost reports
+- ✅ Cost breakdown by model
+- ✅ Cache token tracking
+- ✅ Budget alerts (local)
 
-| Provider | Models Supported | Usage API |
-|----------|-----------------|-----------|
-| OpenAI | GPT-4o, GPT-4, GPT-3.5, etc. | ✅ |
-| Anthropic | Claude 4, Claude 3.5, etc. | ✅ |
-| Gemini | Gemini 1.5, Gemini 2.0 | Soon |
+### With Config (Optional)
+- ✅ Monitor external APIs (OpenAI, Anthropic)
+- ✅ Cross-platform usage aggregation
+- ✅ Budget alerts via webhook (Feishu, Telegram, Discord)
 
-### Cost Calculation
+## Scripts
 
-- **Base cost**: (input_tokens × input_price) + (output_tokens × output_price)
-- **Cache discount**: For Anthropic prompt caching (90% off for cache reads)
-- **Tiered pricing**: Automatic detection for >128K token context
+| Script | Description |
+|--------|-------------|
+| `fetch_usage.py` | Fetch usage data (auto-runs for OpenClaw) |
+| `report.py` | Generate cost reports |
+| `alert.py` | Check budget and send alerts |
+| `calc_cost.py` | Cost calculation logic |
 
-### Storage
+## Examples
 
-- Local SQLite database at `~/.llm-cost-monitor/usage.db`
-- All data stays on your machine
-- No telemetry or cloud sync
+```bash
+# Quick report (no config needed)
+python3 scripts/report.py
 
-### Alerts
+# JSON output for automation
+python3 scripts/report.py --json
 
-Supported notification channels:
-- Feishu
-- Telegram
-- Discord
-- Email (via webhook)
+# Budget check
+python3 scripts/alert.py --budget 50
+
+# Last 7 days
+python3 scripts/report.py --period week
+```
+
+## Cron Automation
+
+```bash
+# Daily report at 9 AM
+0 9 * * * python3 /path/to/scripts/report.py
+```
 
 ## Project Structure
 
 ```
 llm-cost-monitor/
-├── SKILL.md              # This file
-├── README.md             # Detailed documentation
+├── SKILL.md
+├── README.md
 ├── config/
-│   └── config.yaml       # API keys and settings
+│   └── config.yaml.example  # Optional config
 ├── scripts/
-│   ├── fetch_usage.py   # Fetch usage from providers
-│   ├── calc_cost.py     # Cost calculation logic
+│   ├── fetch_usage.py    # Fetch from OpenClaw + external APIs
+│   ├── calc_cost.py     # Cost calculation
 │   ├── store.py         # SQLite storage
-│   ├── report.py        # Generate reports
+│   ├── report.py        # Reports
 │   └── alert.py         # Budget alerts
-├── data/
-│   └── model_prices.json # Model pricing data
 └── examples/
-    └── cron_example.sh   # Cron job examples
+    └── cron.sh
 ```
-
-## Cron Automation
-
-Add to your HEARTBEAT.md or cron:
-
-```bash
-# Run daily at 11 PM
-0 23 * * * cd /path/to/llm-cost-monitor && python3 scripts/fetch_usage.py --yesterday
-0 23 * * * cd /path/to/llm-cost-monitor && python3 scripts/alert.py --budget 100
-```
-
-## Pricing Data
-
-Pricing is updated from LiteLLM's model_prices_and_context_window.json.
-Run `python3 scripts/update_pricing.py` to sync latest prices.
-
-## License
-
-MIT

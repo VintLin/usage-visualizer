@@ -1,249 +1,257 @@
 #!/usr/bin/env python3
 """
-Fetch usage data from LLM providers (OpenAI, Anthropic)
+Fetch usage data from OpenClaw sessions AND optionally from external APIs
 """
 import argparse
 import json
 import os
 import sys
+import glob
 import yaml
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional
 
-# Add scripts directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from store import UsageStore
-from calc_cost import calculate_cost, MODEL_PRICING
+from calc_cost import calculate_cost
+
+
+# Default OpenClaw session paths
+DEFAULT_OPENCLAW_PATHS = [
+    os.path.expanduser("~/.openclaw/agents/*/sessions/*.jsonl"),
+    os.path.expanduser("~/.clawdbot/agents/*/sessions/*.jsonl"),
+]
+
+
+def find_session_files(patterns: List[str] = None) -> List[str]:
+    """Find all OpenClaw session JSONL files"""
+    if patterns is None:
+        patterns = DEFAULT_OPENCLAW_PATHS
+
+    files = []
+    for pattern in patterns:
+        files.extend(glob.glob(pattern))
+
+    return sorted(set(files))
+
+
+def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
+    """Parse OpenClaw session file and extract usage data"""
+    usage_records = []
+
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                # Extract timestamp to filter by date
+                timestamp = data.get("timestamp") or data.get("created_at")
+                if timestamp:
+                    try:
+                        # Handle various timestamp formats
+                        if isinstance(timestamp, (int, float)):
+                            record_date = datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d")
+                        else:
+                            record_date = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+
+                        if date and record_date != date:
+                            continue
+                    except (ValueError, OSError):
+                        pass
+
+                # Extract usage data from message
+                message = data.get("message", {})
+
+                # Try different paths for usage
+                usage = (
+                    message.get("usage") or
+                    data.get("usage") or
+                    data.get("metrics", {}).get("usage")
+                )
+
+                if not usage:
+                    continue
+
+                # Extract model info
+                model = (
+                    message.get("model") or
+                    data.get("model") or
+                    data.get("model_alias") or
+                    "unknown"
+                )
+
+                # Determine provider from model
+                if "claude" in model.lower() or "anthropic" in model.lower():
+                    provider = "anthropic"
+                elif "gpt" in model.lower() or "openai" in model.lower():
+                    provider = "openai"
+                elif "gemini" in model.lower():
+                    provider = "gemini"
+                else:
+                    provider = "unknown"
+
+                # Extract token counts
+                input_tokens = usage.get("inputTokens", 0) or usage.get("input_tokens", 0) or 0
+                output_tokens = usage.get("outputTokens", 0) or usage.get("output_tokens", 0) or 0
+                total_tokens = usage.get("totalTokens", 0) or usage.get("total_tokens", 0) or 0
+
+                # Handle combined total if separate not available
+                if not input_tokens and not output_tokens and total_tokens:
+                    input_tokens = total_tokens // 2
+                    output_tokens = total_tokens - input_tokens
+
+                # Cache tokens (Anthropic)
+                cache_read_tokens = usage.get("cacheReadTokens", 0) or usage.get("cache_read_tokens", 0) or 0
+                cache_creation_tokens = usage.get("cacheCreationTokens", 0) or usage.get("cache_creation_tokens", 0) or 0
+
+                # Cost - prefer real cost if available
+                cost = (
+                    usage.get("cost", {}).get("total") if isinstance(usage.get("cost"), dict) else
+                    usage.get("cost", 0) or
+                    usage.get("totalCost", 0) or
+                    0
+                )
+
+                # If no real cost, calculate it
+                if cost == 0 or cost is None:
+                    cost = calculate_cost(model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+
+                if input_tokens or output_tokens or cost:
+                    usage_records.append({
+                        "provider": provider,
+                        "model": model,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "cache_read_tokens": cache_read_tokens,
+                        "cache_creation_tokens": cache_creation_tokens,
+                        "cost": cost
+                    })
+
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+
+    return usage_records
 
 
 def load_config(config_path: str = "config/config.yaml") -> Dict:
-    """Load configuration from YAML file"""
-    # Try multiple paths
+    """Load optional configuration"""
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     paths_to_try = [
         config_path,
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), config_path),
+        os.path.join(base_dir, config_path),
         os.path.expanduser("~/.llm-cost-monitor/config.yaml"),
     ]
 
     for path in paths_to_try:
         if os.path.exists(path):
             with open(path, 'r') as f:
-                return yaml.safe_load(f)
+                return yaml.safe_load(f) or {}
 
-    # Return empty config if no file found
-    return {"providers": {}, "budget": {}, "storage": {}}
-
-
-def fetch_openai_usage(api_key: str, date: str) -> List[Dict]:
-    """Fetch usage from OpenAI API"""
-    import requests
-
-    url = "https://api.openai.com/v1/usage"
-    params = {"date": date}
-
-    headers = {
-        "Authorization": f"Bearer {api_key}"
-    }
-
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        usage_records = []
-        for item in data.get("data", []):
-            # Skip if no usage
-            if item.get("n_context_tokens_total", 0) == 0 and item.get("n_generated_tokens_total", 0) == 0:
-                continue
-
-            model = item.get("snapshot_id", "unknown")
-            input_tokens = item.get("n_context_tokens_total", 0)
-            output_tokens = item.get("n_generated_tokens_total", 0)
-
-            # Calculate cost
-            cost = calculate_cost(model, input_tokens, output_tokens)
-
-            usage_records.append({
-                "provider": "openai",
-                "model": model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cache_read_tokens": 0,
-                "cache_creation_tokens": 0,
-                "cost": cost
-            })
-
-        return usage_records
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching OpenAI usage: {e}")
-        return []
+    return {}
 
 
-def fetch_anthropic_usage(api_key: str, organization_id: str, start_date: str, end_date: str) -> List[Dict]:
-    """Fetch usage from Anthropic API"""
-    import requests
-
-    # Anthropic API endpoint
-    url = f"https://api.anthropic.com/v1/organizations/{organization_id}/usage"
-
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01"
-    }
-
-    params = {
-        "start_date": start_date,
-        "end_date": end_date
-    }
-
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        usage_records = []
-
-        # Process by day
-        for day_data in data.get("daily_usage", []):
-            date = day_data.get("date", start_date)
-
-            for usage in day_data.get("usage", []):
-                model = usage.get("model", "unknown")
-                input_tokens = usage.get("input_tokens", 0)
-                output_tokens = usage.get("output_tokens", 0)
-                cache_read_tokens = usage.get("cache_read_tokens", 0)
-                cache_creation_tokens = usage.get("cache_creation_tokens", 0)
-
-                # Calculate cost with cache
-                cost = calculate_cost(
-                    model,
-                    input_tokens,
-                    output_tokens,
-                    cache_read_tokens,
-                    cache_creation_tokens
-                )
-
-                usage_records.append({
-                    "provider": "anthropic",
-                    "model": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "cache_read_tokens": cache_read_tokens,
-                    "cache_creation_tokens": cache_creation_tokens,
-                    "cost": cost
-                })
-
-        return usage_records
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching Anthropic usage: {e}")
-        return []
-
-
-def fetch_usage(
-    date: str,
-    config_path: str = "config/config.yaml",
-    dry_run: bool = False
-):
-    """Fetch usage for a specific date"""
-    config = load_config(config_path)
-
-    storage_path = config.get("storage", {}).get("path", "~/.llm-cost-monitor")
+def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-monitor") -> int:
+    """Fetch usage from OpenClaw sessions (no config needed!)"""
     store = UsageStore(storage_path)
 
-    providers = config.get("providers", {})
-    total_fetched = 0
+    # Find all session files
+    session_files = find_session_files()
 
-    # Fetch OpenAI usage
-    openai_keys = providers.get("openai", {}).get("keys", [])
-    for api_key in openai_keys:
-        print(f"Fetching OpenAI usage for {date}...")
-        records = fetch_openai_usage(api_key, date)
+    if not session_files:
+        print("No OpenClaw session files found")
+        return 0
 
-        if not dry_run:
-            for record in records:
-                store.add_usage(
-                    date=date,
-                    provider="openai",
-                    api_key=api_key,
-                    model=record["model"],
-                    input_tokens=record["input_tokens"],
-                    output_tokens=record["output_tokens"],
-                    cache_read_tokens=record.get("cache_read_tokens", 0),
-                    cache_creation_tokens=record.get("cache_creation_tokens", 0),
-                    cost=record["cost"]
-                )
+    print(f"Found {len(session_files)} session files")
 
-        total_fetched += len(records)
-        print(f"  → {len(records)} records")
+    total_records = 0
 
-    # Fetch Anthropic usage
-    anthropic_config = providers.get("anthropic", {})
-    anthropic_keys = anthropic_config.get("keys", [])
-    org_id = anthropic_config.get("organization_id", "")
+    for file_path in session_files:
+        records = parse_openclaw_session(file_path, date)
 
-    if anthropic_keys and org_id:
-        print(f"Fetching Anthropic usage for {date}...")
-        for api_key in anthropic_keys:
-            records = fetch_anthropic_usage(api_key, org_id, date, date)
+        for record in records:
+            # Use file path as api_key hash for OpenClaw sessions
+            api_key = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
 
-            if not dry_run:
-                for record in records:
-                    store.add_usage(
-                        date=date,
-                        provider="anthropic",
-                        api_key=api_key,
-                        model=record["model"],
-                        input_tokens=record["input_tokens"],
-                        output_tokens=record["output_tokens"],
-                        cache_read_tokens=record.get("cache_read_tokens", 0),
-                        cache_creation_tokens=record.get("cache_creation_tokens", 0),
-                        cost=record["cost"]
-                    )
+            store.add_usage(
+                date=date or datetime.now().strftime("%Y-%m-%d"),
+                provider=record["provider"],
+                api_key=api_key,
+                model=record["model"],
+                input_tokens=record["input_tokens"],
+                output_tokens=record["output_tokens"],
+                cache_read_tokens=record.get("cache_read_tokens", 0),
+                cache_creation_tokens=record.get("cache_creation_tokens", 0),
+                cost=record["cost"]
+            )
+            total_records += 1
 
-            total_fetched += len(records)
-            print(f"  → {len(records)} records")
-
-    print(f"\nTotal: {total_fetched} records fetched")
-    return total_fetched
+    print(f"Processed {total_records} usage records from OpenClaw")
+    return total_records
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch LLM API usage data")
+    parser = argparse.ArgumentParser(description="Fetch LLM usage data")
     parser.add_argument("--date", type=str, help="Specific date (YYYY-MM-DD)")
     parser.add_argument("--today", action="store_true", help="Fetch today's usage")
     parser.add_argument("--yesterday", action="store_true", help="Fetch yesterday's usage")
     parser.add_argument("--last-days", type=int, help="Fetch last N days")
-    parser.add_argument("--config", type=str, default="config/config.yaml", help="Config file path")
+    parser.add_argument("--openclaw-only", action="store_true", help="Only read OpenClaw sessions (no external APIs)")
+    parser.add_argument("--config", type=str, help="Config file path")
     parser.add_argument("--dry-run", action="store_true", help="Don't save to database")
 
     args = parser.parse_args()
 
-    # Determine date(s) to fetch
+    # Determine date(s)
     dates = []
+    today = datetime.now()
 
     if args.today:
-        dates.append(datetime.now().strftime("%Y-%m-%d"))
+        dates.append(today.strftime("%Y-%m-%d"))
     elif args.yesterday:
-        dates.append((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"))
+        dates.append((today - timedelta(days=1)).strftime("%Y-%m-%d"))
     elif args.last_days:
         for i in range(args.last_days):
-            date = (datetime.now() - timedelta(days=i+1)).strftime("%Y-%m-%d")
+            date = (today - timedelta(days=i+1)).strftime("%Y-%m-%d")
             dates.append(date)
     elif args.date:
         dates.append(args.date)
     else:
-        # Default to yesterday
-        dates.append((datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"))
+        # Default to today
+        dates.append(today.strftime("%Y-%m-%d"))
 
-    # Fetch for each date
+    # Load optional config
+    config = {}
+    if args.config:
+        config = load_config(args.config)
+    elif os.path.exists("config/config.yaml"):
+        config = load_config("config/config.yaml")
+    elif os.path.exists(os.path.expanduser("~/.llm-cost-monitor/config.yaml")):
+        config = load_config(os.path.expanduser("~/.llm-cost-monitor/config.yaml"))
+
+    storage_path = config.get("storage", {}).get("path", "~/.llm-cost-monitor")
+
+    # Always fetch from OpenClaw (no config needed!)
     for date in dates:
         print(f"\n{'='*50}")
         print(f"Fetching usage for {date}")
         print('='*50)
-        fetch_usage(date, args.config, args.dry_run)
+
+        if args.openclaw_only or not config.get("providers"):
+            # Default: just OpenClaw sessions
+            fetch_openclow_usage(date, storage_path)
+        else:
+            # TODO: Add external API fetching when config is provided
+            fetch_openclow_usage(date, storage_path)
+            print("\n⚠️ External API fetching not yet implemented")
+            print("Config detected but only OpenClaw sessions are being read")
 
 
 if __name__ == "__main__":
