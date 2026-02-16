@@ -1,128 +1,191 @@
 ---
 name: llm-cost-monitor
-description: Track and monitor LLM API usage and costs from OpenClaw sessions. Optional config for external API monitoring.
-metadata:
-  {
-    "openclaw": {
-      "emoji": "💰",
-      "os": ["darwin", "linux"],
-      "requires": { "bins": ["python3"] },
-    },
-  }
+description: Track LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual HTML reports. No config required - works out of the box.
+metadata: {"openclaw":{"emoji":"💰","requires":{"bins":["python3"]}}}
 ---
 
 # LLM Cost Monitor
 
-Track and monitor LLM API usage and costs from OpenClaw sessions.
+Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual HTML reports.
 
-## Overview
+## ✨ Features
 
-LLM Cost Monitor helps you track and monitor your LLM API usage and costs. By default, it reads directly from OpenClaw session logs - no configuration required!
+- **No config required!** - Just install and run
+- **Automatic OpenClaw detection** - Reads session logs automatically
+- **Accurate cost tracking** - Uses real cost data when available, calculates otherwise
+- **Cache token support** - Tracks Anthropic prompt caching (read/write)
+- **SQLite persistence** - Historical data stored locally
+- **Daily/weekly/monthly reports** - Multiple time periods
+- **Budget alerts** - Monitor your spending with exit codes
+- **Visual HTML reports** - Generate images for sharing
+- **Multi-provider support** - Anthropic, OpenAI, Gemini, MiniMax
 
-**No config needed** - Just install and run!
-
-## Quick Start (No Config Required!)
+## 🚀 Quick Start
 
 ```bash
-# Today's cost report
+# Clone or install
+git clone https://github.com/VintLin/llm-cost-monitor.git
+cd llm-cost-monitor
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run - that's it!
 python3 scripts/report.py
-
-# Yesterday's report
-python3 scripts/report.py --period yesterday
-
-# Weekly summary
-python3 scripts/report.py --period week
-
-# Check budget
-python3 scripts/alert.py --budget 50
 ```
 
-## With Optional Configuration
-
-Create `config/config.yaml` for advanced features:
-
-```yaml
-# Optional: Monitor external APIs in addition to OpenClaw
-providers:
-  openai:
-    keys:
-      - sk-your-openai-key
-  anthropic:
-    keys:
-      - your-anthropic-key
-    organization_id: your-org-id
-
-# Optional: Budget settings
-budget:
-  monthly_limit: 100
-  alert_threshold: 0.8
-
-# Optional: Notification channels
-notify:
-  - feishu
-  # - telegram
-```
-
-## Features
-
-### Default (No Config)
-- ✅ Read OpenClaw session logs automatically
-- ✅ Daily/weekly/monthly cost reports
-- ✅ Cost breakdown by model
-- ✅ Cache token tracking
-- ✅ Budget alerts (local)
-
-### With Config (Optional)
-- ✅ Monitor external APIs (OpenAI, Anthropic)
-- ✅ Cross-platform usage aggregation
-- ✅ Budget alerts via webhook (Feishu, Telegram, Discord)
-
-## Scripts
-
-| Script | Description |
-|--------|-------------|
-| `fetch_usage.py` | Fetch usage data (auto-runs for OpenClaw) |
-| `report.py` | Generate cost reports |
-| `alert.py` | Check budget and send alerts |
-| `calc_cost.py` | Cost calculation logic |
-
-## Examples
+### Available Commands
 
 ```bash
-# Quick report (no config needed)
-python3 scripts/report.py
+# Fetch usage data from OpenClaw sessions
+python3 scripts/fetch_usage.py                    # Today's usage
+python3 scripts/fetch_usage.py --yesterday         # Yesterday
+python3 scripts/fetch_usage.py --last-days 7       # Last 7 days
 
-# JSON output for automation
-python3 scripts/report.py --json
+# Text reports
+python3 scripts/report.py                          # Today's report
+python3 scripts/report.py --period yesterday       # Yesterday
+python3 scripts/report.py --period week           # This week
+python3 scripts/report.py --period month           # This month
+python3 scripts/report.py --json                  # JSON output
 
-# Budget check
-python3 scripts/alert.py --budget 50
+# Visual HTML report (generate image)
+python3 scripts/html_report.py                     # Generate HTML
+python3 scripts/html_report.py --start 2026-01-01 --end 2026-01-31
 
-# Last 7 days
-python3 scripts/report.py --period week
+# Budget alerts
+python3 scripts/alert.py --budget-usd 50          # Check $50 budget (exit code 2 on breach)
+python3 scripts/alert.py --budget-usd 100 --mode warn  # Just warn, don't exit
+python3 scripts/alert.py --budget-usd 10 --period week  # Check weekly budget
 ```
 
-## Cron Automation
+## 📊 Data Dimensions
+
+The tracker stores and analyzes:
+
+| Field | Description |
+|-------|-------------|
+| `date` | Usage date |
+| `provider` | API provider (anthropic, openai, gemini, etc.) |
+| `model` | Model name |
+| `input_tokens` | Input tokens consumed |
+| `output_tokens` | Output tokens generated |
+| `cache_read_tokens` | Tokens read from cache (90% discount) |
+| `cache_creation_tokens` | Tokens written to cache |
+| `cost` | Calculated cost in USD |
+
+## 💾 SQLite Storage
+
+Data is stored at `~/.llm-cost-monitor/usage.db`
+
+### Query Examples
+
+```python
+from scripts.store import UsageStore
+
+store = UsageStore()
+
+# Get today's cost
+cost = store.get_total_cost("2026-02-17", "2026-02-17")
+
+# Get tokens summary (including cache)
+tokens = store.get_tokens_summary("2026-02-01", "2026-02-17")
+# Returns: {input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, total_cost}
+
+# Get daily breakdown
+daily = store.get_daily_summary("2026-02-01", "2026-02-17")
+# Returns: [{date, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost}, ...]
+
+# Get by model
+by_model = store.get_cost_by_model("2026-02-01", "2026-02-17")
+# Returns: {"claude-opus-4": 45.50, "gpt-4o": 23.20, ...}
+```
+
+## 🔔 Budget Alerts
+
+Integrate with cron or HEARTBEAT for automated monitoring:
 
 ```bash
-# Daily report at 9 AM
-0 9 * * * python3 /path/to/scripts/report.py
+# Check daily budget - exits with code 2 if exceeded
+python3 scripts/alert.py --budget-usd 10 --period today
+
+# Check weekly budget - warn only (no exit)
+python3 scripts/alert.py --budget-usd 50 --period week --mode warn
+
+# Check monthly budget
+python3 scripts/alert.py --budget-usd 100 --period month
 ```
 
-## Project Structure
+### Exit Codes
+
+- `0` - Within budget
+- `2` - Budget exceeded (use in cron to trigger alerts)
+
+## 🖼️ Visual Reports
+
+Generate HTML reports that can be converted to images:
+
+```bash
+# Generate HTML report
+python3 scripts/html_report.py --output /tmp/report.html
+
+# The HTML uses minimal inline styles and can be converted to PNG
+# using html2image or similar tools
+```
+
+## 📁 Project Structure
 
 ```
 llm-cost-monitor/
-├── SKILL.md
-├── README.md
+├── SKILL.md                    # Skill definition
+├── README.md                   # This file
+├── requirements.txt             # Python dependencies
 ├── config/
-│   └── config.yaml.example  # Optional config
+│   └── config.yaml.example    # Optional config template
 ├── scripts/
-│   ├── fetch_usage.py    # Fetch from OpenClaw + external APIs
-│   ├── calc_cost.py     # Cost calculation
-│   ├── store.py         # SQLite storage
-│   ├── report.py        # Reports
-│   └── alert.py         # Budget alerts
+│   ├── fetch_usage.py         # Fetch usage from sessions
+│   ├── calc_cost.py           # Cost calculation with pricing
+│   ├── store.py               # SQLite storage
+│   ├── report.py              # Text reports
+│   ├── html_report.py         # Visual HTML reports
+│   └── alert.py               # Budget alerts
 └── examples/
-    └── cron.sh
+    └── cron_example.sh        # Cron examples
 ```
+
+## 🤖 Automation
+
+### Cron Job Example
+
+```bash
+# Run daily at 9 AM - fetch and check budget
+0 9 * * * cd /path/to/llm-cost-monitor && python3 scripts/fetch_usage.py --yesterday && python3 scripts/alert.py --budget-usd 10 --period yesterday || echo "Budget exceeded!"
+```
+
+### OpenClaw HEARTBEAT Integration
+
+Add to your HEARTBEAT.md:
+
+```markdown
+### LLM Cost Check (daily)
+- Run: python3 scripts/alert.py --budget-usd 10 --period yesterday --mode warn
+- If exit code 2, send alert to user
+```
+
+## 📝 Requirements
+
+- Python 3.8+
+- pyyaml
+- requests
+- html2image (for visual reports)
+
+## 🔧 How It Works
+
+1. **Finds session files**: `~/.openclaw/agents/*/sessions/*.jsonl`
+2. **Parses usage data**: Extracts tokens, cache, cost from each call
+3. **Stores in SQLite**: Persists historical data locally
+4. **Generates reports**: Text or HTML output
+
+## 📄 License
+
+MIT

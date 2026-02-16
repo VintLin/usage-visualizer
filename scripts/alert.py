@@ -3,168 +3,108 @@
 Budget alerts for LLM Cost Monitor
 """
 import argparse
-import os
 import sys
-import yaml
+import os
 from datetime import datetime, timedelta
 
-# Add scripts directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from store import UsageStore
 
 
-def load_config(config_path: str = "config/config.yaml") -> dict:
-    """Load configuration"""
-    paths_to_try = [
-        config_path,
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), config_path),
-        os.path.expanduser("~/.llm-cost-monitor/config.yaml"),
-    ]
-
-    for path in paths_to_try:
-        if os.path.exists(path):
-            with open(path, 'r') as f:
-                return yaml.safe_load(f)
-
-    return {"providers": {}, "budget": {}, "storage": {}}
-
-
-def format_cost(cost: float) -> str:
-    """Format cost for display"""
-    if cost >= 1:
-        return f"${cost:.2f}"
-    else:
-        return f"${cost:.4f}"
-
-
-def send_feishu_alert(webhook_url: str, message: str):
-    """Send alert to Feishu"""
-    import requests
-
-    payload = {
-        "msg_type": "text",
-        "content": {
-            "text": message
-        }
-    }
-
-    try:
-        response = requests.post(webhook_url, json=payload, timeout=10)
-        response.raise_for_status()
-        print("✅ Feishu alert sent")
-    except Exception as e:
-        print(f"❌ Failed to send Feishu alert: {e}")
-
-
-def send_telegram_alert(bot_token: str, chat_id: str, message: str):
-    """Send alert to Telegram"""
-    import requests
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message
-    }
-
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        print("✅ Telegram alert sent")
-    except Exception as e:
-        print(f"❌ Failed to send Telegram alert: {e}")
-
-
 def check_budget(
-    budget: float,
-    config: dict,
-    mode: str = "exit",
-    period: str = "month"
-):
-    """Check budget and send alerts"""
-    storage_path = config.get("storage", {}).get("path", "~/.llm-cost-monitor")
-    store = UsageStore(storage_path)
-
-    # Get current month date range
+    store: UsageStore,
+    budget_usd: float,
+    period: str = "today",
+    provider: str = None,
+    mode: str = "exit"  # "exit" (exit code 2 on breach) or "warn" (just warn)
+) -> dict:
+    """
+    Check if usage exceeds budget
+    
+    Args:
+        store: UsageStore instance
+        budget_usd: Budget in USD
+        period: "today", "yesterday", "week", "month"
+        provider: Optional provider filter
+        mode: "exit" or "warn"
+    
+    Returns:
+        dict with keys: exceeded (bool), cost (float), budget (float), message (str)
+    """
     today = datetime.now()
-    start_date = today.replace(day=1).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
-
-    # Get usage
-    total_cost = store.get_total_cost(start_date, end_date)
-
-    # Calculate percentage
-    pct = (total_cost / budget * 100) if budget > 0 else 0
-
-    # Build message
-    threshold = config.get("budget", {}).get("alert_threshold", 0.8) * 100
-
-    if pct >= threshold:
-        status = "🔴 EXCEEDED" if pct >= 100 else "⚠️ WARNING"
-        message = f"""💰 LLM Cost Alert
-
-{status} Budget Alert!
-
-Current spending: {format_cost(total_cost)}
-Budget limit: {format_cost(budget)}
-Usage: {pct:.1f}%
-
-Period: {start_date} to {end_date}
-"""
+    
+    if period == "today":
+        start_date = end_date = today.strftime("%Y-%m-%d")
+        period_name = "today"
+    elif period == "yesterday":
+        yesterday = today - timedelta(days=1)
+        start_date = end_date = yesterday.strftime("%Y-%m-%d")
+        period_name = "yesterday"
+    elif period == "week":
+        start_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+        period_name = "last 7 days"
+    elif period == "month":
+        start_date = today.replace(day=1).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+        period_name = "this month"
     else:
-        print(f"✅ Budget OK: {format_cost(total_cost)} / {format_cost(budget)} ({pct:.1f}%)")
-        return 0
-
-    # Send notifications
-    notify_channels = config.get("budget", {}).get("notify_channels", [])
-    notifications = config.get("notifications", {})
-
-    for channel in notify_channels:
-        if channel == "feishu":
-            webhook = notifications.get("feishu", {}).get("webhook_url", "")
-            if webhook:
-                send_feishu_alert(webhook, message)
-        elif channel == "telegram":
-            token = notifications.get("telegram", {}).get("bot_token", "")
-            chat_id = notifications.get("telegram", {}).get("chat_id", "")
-            if token and chat_id:
-                send_telegram_alert(token, chat_id, message)
-
-    # Exit code based on mode
-    if mode == "exit" and pct >= 100:
-        print(f"\n🔴 Budget exceeded! Exiting with code 2")
-        sys.exit(2)
-    elif mode == "warn" or (mode == "exit" and pct >= threshold and pct < 100):
-        print(f"\n⚠️ Budget warning! Exiting with code 1")
-        sys.exit(1)
-
-    return 0
+        raise ValueError(f"Unknown period: {period}")
+    
+    # Get cost
+    cost = store.get_total_cost(start_date, end_date, provider)
+    
+    # Check if exceeded
+    exceeded = cost > budget_usd
+    
+    # Format message
+    provider_str = f" ({provider})" if provider else ""
+    
+    if exceeded:
+        pct_over = ((cost - budget_usd) / budget_usd) * 100
+        message = f"⚠️ ALERT: {period_name}{provider_str} cost ${cost:.2f} exceeded budget ${budget_usd:.2f} by {pct_over:.1f}%"
+    else:
+        pct_left = ((budget_usd - cost) / budget_usd) * 100
+        message = f"✅ {period_name}{provider_str} cost ${cost:.2f} is within budget ${budget_usd:.2f} ({pct_left:.1f}% remaining)"
+    
+    return {
+        "exceeded": exceeded,
+        "cost": cost,
+        "budget": budget_usd,
+        "period": period_name,
+        "provider": provider,
+        "message": message,
+        "exit_code": 2 if exceeded and mode == "exit" else 0
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check LLM cost budget")
-    parser.add_argument("--budget", type=float, help="Budget limit in USD")
-    parser.add_argument("--mode", type=str, choices=["exit", "warn"], default="exit",
-                       help="Mode: exit with code on exceed, warn always exits 0")
-    parser.add_argument("--period", type=str, choices=["today", "week", "month"],
-                       default="month", help="Budget period")
-    parser.add_argument("--config", type=str, default="config/config.yaml", help="Config file path")
-
+    parser = argparse.ArgumentParser(description="Budget alert for LLM usage")
+    parser.add_argument("--budget-usd", type=float, required=True, help="Budget threshold in USD")
+    parser.add_argument("--period", type=str, default="today", 
+                       choices=["today", "yesterday", "week", "month"],
+                       help="Period to check")
+    parser.add_argument("--provider", type=str, help="Filter by provider")
+    parser.add_argument("--mode", type=str, default="exit",
+                       choices=["exit", "warn"],
+                       help="Action on breach: 'exit' (exit code 2) or 'warn' (just print)")
+    
     args = parser.parse_args()
-
-    config = load_config(args.config)
-
-    # Get budget from args or config
-    budget = args.budget
-    if budget is None:
-        budget = config.get("budget", {}).get("monthly_limit", 0)
-
-    if budget <= 0:
-        print("No budget set. Use --budget or set monthly_limit in config.")
-        sys.exit(1)
-
-    exit_code = check_budget(budget, config, args.mode, args.period)
-    sys.exit(exit_code)
+    
+    store = UsageStore()
+    
+    result = check_budget(
+        store,
+        budget_usd=args.budget_usd,
+        period=args.period,
+        provider=args.provider,
+        mode=args.mode
+    )
+    
+    print(result["message"])
+    
+    sys.exit(result["exit_code"])
 
 
 if __name__ == "__main__":

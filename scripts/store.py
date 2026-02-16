@@ -194,6 +194,91 @@ class UsageStore:
 
         return {row[0]: row[1] for row in rows}
 
+    def get_tokens_summary(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: Optional[str] = None
+    ) -> Dict:
+        """Get detailed token summary including cache tokens"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = """
+            SELECT 
+                SUM(input_tokens) as total_input,
+                SUM(output_tokens) as total_output,
+                SUM(cache_read_tokens) as total_cache_read,
+                SUM(cache_creation_tokens) as total_cache_write,
+                SUM(input_tokens + output_tokens) as total_tokens,
+                SUM(cost) as total_cost
+            FROM usage_records
+            WHERE date >= ? AND date <= ?
+        """
+        params = [start_date, end_date]
+
+        if provider:
+            query += " AND provider = ?"
+            params.append(provider)
+
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                "input_tokens": row["total_input"] or 0,
+                "output_tokens": row["total_output"] or 0,
+                "cache_read_tokens": row["total_cache_read"] or 0,
+                "cache_creation_tokens": row["total_cache_write"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+                "total_cost": row["total_cost"] or 0
+            }
+        return {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "total_tokens": 0,
+            "total_cost": 0
+        }
+
+    def get_daily_summary(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: Optional[str] = None
+    ) -> List[Dict]:
+        """Get daily summary grouped by date"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = """
+            SELECT date,
+                   SUM(input_tokens) as input_tokens,
+                   SUM(output_tokens) as output_tokens,
+                   SUM(cache_read_tokens) as cache_read_tokens,
+                   SUM(cache_creation_tokens) as cache_creation_tokens,
+                   SUM(cost) as cost
+            FROM usage_records
+            WHERE date >= ? AND date <= ?
+        """
+        params = [start_date, end_date]
+
+        if provider:
+            query += " AND provider = ?"
+            params.append(provider)
+
+        query += " GROUP BY date ORDER BY date DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
     @staticmethod
     def _hash_key(api_key: str) -> str:
         """Hash API key for storage"""
