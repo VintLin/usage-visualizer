@@ -1,0 +1,39 @@
+# LLM Cost Monitor Configuration
+# Copy this to config.yaml and fill in your API keys
+
+providers:
+  openai:
+    # Add your OpenAI API keys here
+    keys:
+      - sk-your-openai-key-here
+
+  anthropic:
+    # Add your Anthropic API keys here
+    keys:
+      - your-anthropic-key-here
+    # Get from https://console.anthropic.com/settings/organization
+    organization_id: your-org-id
+
+budget:
+  # Monthly budget in USD
+  monthly_limit: 100
+  # Alert at this threshold (0.8 = 80%)
+  alert_threshold: 0.8
+  # Notification channels: feishu, telegram, discord
+  notify_channels:
+    - feishu
+
+storage:
+  # Where to store database (~ expands to home directory)
+  path: ~/.llm-cost-monitor
+
+# Notification settings (optional)
+notifications:
+  feishu:
+    # webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+    webhook_url: ""
+  telegram:
+    bot_token: ""
+    chat_id: ""
+  discord:
+    webhook_url: ""
