@@ -14,6 +14,7 @@ from typing import Dict, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from store import UsageStore
+from calc_cost import get_pricing
 
 
 def load_config(config_path: str = "config/config.yaml") -> Dict:
@@ -107,6 +108,17 @@ def print_report(period: str, config: Dict):
         pct_of_budget = (total_cost / budget_limit * 100) if budget_limit > 0 else 0
         status = "✅" if pct_of_budget < 80 else "⚠️" if pct_of_budget < 100 else "🔴"
         print(f"\n🎯 Budget: {format_cost(total_cost)} / {format_cost(budget_limit)} ({pct_of_budget:.0f}%) {status}")
+
+    # Unknown models note - check which models don't have local pricing
+    unknown_models = []
+    for model in by_model.keys():
+        if get_pricing(model) is None:
+            unknown_models.append(model)
+
+    if unknown_models:
+        print(f"\n⚠️ Note: No local pricing data for these models (showing real cost from sessions):")
+        for model in sorted(unknown_models):
+            print(f"   • {model}")
 
     print()
 

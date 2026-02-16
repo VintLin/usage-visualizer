@@ -5,7 +5,20 @@ Updated: 2026-02-16
 """
 import json
 import os
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Set
+
+# Track models without pricing
+UNKNOWN_MODELS: Set[str] = set()
+
+
+def get_unknown_models() -> Set[str]:
+    """Get set of models without pricing"""
+    return UNKNOWN_MODELS.copy()
+
+
+def clear_unknown_models():
+    """Clear unknown models tracking"""
+    UNKNOWN_MODELS.clear()
 
 # Model pricing (per 1M tokens)
 # Format: "model_name": {"input": price, "output": price, "cache_read": price, "cache_creation": price}
@@ -54,6 +67,7 @@ MODEL_PRICING = {
     # Gemini Models
     "gemini-2.0-flash-exp": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
     "gemini-2.0-flash-thinking-exp": {"input": 0.0, "output": 0.0, "cache_read": 0, "cache_creation": 0},
+    "gemini-3-flash": {"input": 0.075, "output": 0.3, "cache_read": 0, "cache_creation": 0},
     "gemini-1.5-pro": {"input": 1.25, "output": 5.0, "cache_read": 0, "cache_creation": 0},
     "gemini-1.5-flash": {"input": 0.075, "output": 0.3, "cache_read": 0, "cache_creation": 0},
     "gemini-1.5-flash-8b": {"input": 0.0375, "output": 0.15, "cache_read": 0, "cache_creation": 0},
@@ -135,9 +149,9 @@ def calculate_cost(
     pricing = get_pricing(model)
 
     if pricing is None:
-        # Default to a safe estimate if model not found
-        print(f"Warning: No pricing found for model '{model}', using default")
-        return (input_tokens + output_tokens) / 1_000_000 * 1.0  # $1/M as fallback
+        # No pricing available - track and return 0
+        UNKNOWN_MODELS.add(model)
+        return 0  # Show 0 when unknown
 
     # Base cost calculation
     input_price = pricing.get("input", 0) / 1_000_000

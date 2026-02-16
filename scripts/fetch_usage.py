@@ -112,16 +112,19 @@ def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
                 cache_read_tokens = usage.get("cacheReadTokens", 0) or usage.get("cache_read_tokens", 0) or 0
                 cache_creation_tokens = usage.get("cacheCreationTokens", 0) or usage.get("cache_creation_tokens", 0) or 0
 
-                # Cost - prefer real cost if available
-                cost = (
-                    usage.get("cost", {}).get("total") if isinstance(usage.get("cost"), dict) else
-                    usage.get("cost", 0) or
-                    usage.get("totalCost", 0) or
-                    0
-                )
-
-                # If no real cost, calculate it
-                if cost == 0 or cost is None:
+                # Cost - prefer real cost if available (check if field exists first)
+                cost = None
+                
+                # Try different paths for cost
+                if isinstance(usage.get("cost"), dict):
+                    cost = usage.get("cost", {}).get("total")
+                elif "cost" in usage:
+                    cost = usage.get("cost")
+                elif "totalCost" in usage:
+                    cost = usage.get("totalCost")
+                
+                # If no real cost (None), calculate it
+                if cost is None:
                     cost = calculate_cost(model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
 
                 if input_tokens or output_tokens or cost:
