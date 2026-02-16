@@ -182,12 +182,22 @@ def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-moni
         for record in records:
             # Use file path as api_key hash for OpenClaw sessions
             api_key = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
+            
+            # Determine app from path (openclaw or clawdbot)
+            if ".openclaw" in file_path:
+                app = "openclaw"
+            elif ".clawdbot" in file_path:
+                app = "clawdbot"
+            else:
+                app = "openclaw"
 
             store.add_usage(
                 date=date or datetime.now().strftime("%Y-%m-%d"),
                 provider=record["provider"],
                 api_key=api_key,
                 model=record["model"],
+                app=app,
+                source="session",
                 input_tokens=record["input_tokens"],
                 output_tokens=record["output_tokens"],
                 cache_read_tokens=record.get("cache_read_tokens", 0),
