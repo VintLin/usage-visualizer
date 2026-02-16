@@ -82,14 +82,14 @@ def generate_html_report(
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d">
     <div style="max-width:380px;margin:0 auto;padding:16px">
         <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:16px;padding:24px;color:#fff;margin-bottom:12px">
-            <div style="font-size:14px;opacity:0.9;margin-bottom:4px">本月 AI 消耗</div>
+            <div style="font-size:14px;opacity:0.9;margin-bottom:4px">Monthly AI Usage</div>
             <div style="font-size:42px;font-weight:700">{fmt_tokens(total_tokens)}</div>
             <div style="font-size:14px;opacity:0.8;margin-top:8px">≈ {fmt_cost(total_cost)}</div>
-            <div style="font-size:12px;opacity:0.6;margin-top:4px">{start_date} ~ {end_date} · {days_count} 天</div>
+            <div style="font-size:12px;opacity:0.6;margin-top:4px">{start_date} ~ {end_date} · {days_count} days</div>
         </div>
         
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">近7日消耗</div>
+            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">Last 7 Days</div>
 """
     
     # Daily bars - show all 7 days
@@ -125,7 +125,7 @@ def generate_html_report(
     html += """        </div>
         
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">模型分布</div>
+            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">By Model</div>
 """
     
     # Model bars
@@ -162,11 +162,11 @@ def generate_html_report(
         
         <div style="display:flex;gap:12px">
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
-                <div style="font-size:12px;color:#10b981;margin-bottom:4px">总 Token</div>
+                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Total Tokens</div>
                 <div style="font-size:18px;font-weight:600;color:#fff">{fmt_tokens(total_tokens)}</div>
             </div>
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
-                <div style="font-size:12px;color:#10b981;margin-bottom:4px">日均</div>
+                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Daily Avg</div>
                 <div style="font-size:18px;font-weight:600;color:#fff">{fmt_cost(total_cost/days_count) if days_count>0 else '$0'}</div>
             </div>
         </div>
@@ -183,7 +183,7 @@ def main():
     parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD)")
     parser.add_argument("--output", type=str, default="/tmp/llm-cost-report.html", help="Output HTML file")
-    parser.add_argument("--title", type=str, default="AI 消耗", help="Report title")
+    parser.add_argument("--title", type=str, default="AI Usage", help="Report title")
     
     args = parser.parse_args()
     
