@@ -38,14 +38,14 @@ python3 scripts/html_report.py
 
 | 场景 | 命令 | 输出 |
 |------|------|------|
-| **默认（用户未指定）** | `html_report.py` | 📊 图片 (发送飞书) |
-| 用户要文本 | `report.py --text` | 📝 文本 |
-| 用户要JSON | `report.py --json` | 📋 JSON |
+| **默认（用户未指定）** | `html_report.py` | 📊 图片 → 用户默认渠道 |
+| 用户要文本 | `report.py --text` | 📝 文本 → 用户默认渠道 |
+| 用户要JSON | `report.py --json` | 📋 JSON → 用户默认渠道 |
 
 **通知流程：**
 ```
-html_report.py → 生成图片 → OpenClaw message 工具 → 飞书
-report.py --json → JSON → OpenClaw message 工具 → 飞书
+html_report.py → 生成图片 → OpenClaw message 工具 → 用户默认渠道
+report.py --json → JSON → OpenClaw message 工具 → 用户默认渠道
 ```
 
 ### Available Commands
