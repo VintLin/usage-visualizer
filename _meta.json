@@ -1,0 +1,6 @@
+{
+  "version": "0.1.0",
+  "description": "Track and monitor LLM API usage and costs across multiple providers (OpenAI, Anthropic, Gemini)",
+  "author": "VintLin",
+  "homepage": "https://github.com/VintLin/llm-cost-monitor"
+}
