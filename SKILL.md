@@ -29,9 +29,18 @@ cd llm-cost-monitor
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Run - 默认生成图片报告 (html_report.py)
-python3 scripts/html_report.py
+### ⚡️ 使用方式
+
+**当用户询问用量时：**
+1. 先运行 `fetch_usage.py --today` 拉取最新数据
+2. 再生成图片报告 `html_report.py`
+3. 发送给用户
+
+```bash
+# 自动流程
+python3 scripts/fetch_usage.py --today && python3 scripts/html_report.py
 ```
 
 ### 输出模式
