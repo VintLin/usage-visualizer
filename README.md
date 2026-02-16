@@ -26,37 +26,37 @@ cd llm-cost-monitor
 # Install dependencies
 pip install -r requirements.txt
 
-# Run - 默认生成图片报告 (html_report.py)
+# Run - generates image report by default
 python3 scripts/html_report.py
 ```
 
-## ⚡️ 使用方式
+## ⚡️ Usage
 
-**当用户询问用量时：**
-1. 先运行 `fetch_usage.py --today` 拉取最新数据
-2. 再生成图片报告 `html_report.py`
-3. 发送给用户
+**When user asks about usage:**
+1. Run `fetch_usage.py` to fetch latest session data
+2. Generate image report with `html_report.py`
+3. Send to user
 
 ```bash
-# 自动流程
+# Auto update + generate report
 python3 scripts/fetch_usage.py --today && python3 scripts/html_report.py
 ```
 
-### 输出模式
+### Output Modes
 
-| 场景 | 命令 | 输出 |
-|------|------|------|
-| **默认** | `html_report.py` | 📊 图片 → 用户默认渠道 |
-| 用户要文本 | `report.py` | 📝 文本 |
-| 用户要JSON | `report.py --json` | 📋 JSON |
+| Scenario | Command | Output |
+|----------|---------|--------|
+| **Default** | `html_report.py` | 📊 Image → user's default channel |
+| User wants text | `report.py` | 📝 Text → user's default channel |
+| User wants JSON | `report.py --json` | 📋 JSON → user's default channel |
 
-## 📊 示例输出
+## 📊 Sample Output
 
-### 图片报告
+### Image Report
 
 ![AI Usage Report](examples/report-sample.png)
 
-### 文本报告
+### Text Report
 
 ```
 💰 LLM Cost Report - This Week
@@ -82,7 +82,7 @@ Total Tokens: 59.9M
   • claude-opus-4-6-thinking: $0.93 (0%)
 ```
 
-### JSON 输出
+### JSON Output
 
 ```json
 {
@@ -124,29 +124,30 @@ llm-cost-monitor/
 │   ├── calc_cost.py           # Cost calculation with pricing
 │   ├── store.py               # SQLite storage
 │   ├── report.py              # Text reports
-│   ├── html_report.py         # Visual HTML reports
+│   ├── html_report.py          # Visual HTML reports
 │   ├── alert.py               # Budget alerts
 │   └── notify.py              # Multi-channel notification
 └── examples/
-    └── cron_example.sh        # Cron examples
+    ├── report-sample.png       # Sample image output
+    └── cron_example.sh         # Cron examples
 ```
 
 ## 🔧 Available Commands
 
 ```bash
-# 完整流程：先拉取数据，再生成报告
+# Full flow: fetch + generate report
 python3 scripts/fetch_usage.py --today && python3 scripts/html_report.py
 
-# 文本报告
+# Text report
 python3 scripts/report.py --period week
 
-# JSON报告
+# JSON report
 python3 scripts/report.py --json
 
-# 预算警报
+# Budget alerts
 python3 scripts/alert.py --budget-usd 50
 
-# 拉取数据
+# Fetch data
 python3 scripts/fetch_usage.py --last-days 7
 ```
 
@@ -168,13 +169,13 @@ python3 scripts/fetch_usage.py --last-days 7
 ## 🔔 Budget Alerts
 
 ```bash
-# 检查每日预算，超出则 exit code 2
+# Check daily budget - exits with code 2 if exceeded
 python3 scripts/alert.py --budget-usd 10 --period today
 
-# 仅警告不退出
+# Warn only (no exit)
 python3 scripts/alert.py --budget-usd 50 --period week --mode warn
 
-# 检查月度预算
+# Check monthly budget
 python3 scripts/alert.py --budget-usd 100 --period month
 ```
 
@@ -187,7 +188,7 @@ Exit codes:
 ### Cron Job
 
 ```bash
-# 每日自动拉取 + 检查预算
+# Daily auto fetch + budget check
 0 23 * * * cd /path/to/llm-cost-monitor && python3 scripts/fetch_usage.py --yesterday
 30 23 * * * cd /path/to/llm-cost-monitor && python3 scripts/alert.py --budget-usd 10 --period yesterday
 ```
