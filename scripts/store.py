@@ -29,13 +29,15 @@ class UsageStore:
                 provider TEXT NOT NULL,
                 api_key_hash TEXT NOT NULL,
                 model TEXT NOT NULL,
+                app TEXT DEFAULT 'openclaw',
+                source TEXT DEFAULT 'session',
                 input_tokens INTEGER DEFAULT 0,
                 output_tokens INTEGER DEFAULT 0,
                 cache_read_tokens INTEGER DEFAULT 0,
                 cache_creation_tokens INTEGER DEFAULT 0,
                 cost REAL DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(date, provider, api_key_hash, model)
+                UNIQUE(date, provider, api_key_hash, model, app, source)
             )
         """)
 
@@ -54,6 +56,8 @@ class UsageStore:
         provider: str,
         api_key: str,
         model: str,
+        app: str = "openclaw",
+        source: str = "session",
         input_tokens: int = 0,
         output_tokens: int = 0,
         cache_read_tokens: int = 0,
@@ -69,17 +73,17 @@ class UsageStore:
         # Try to insert, update if exists
         cursor.execute("""
             INSERT INTO usage_records
-            (date, provider, api_key_hash, model, input_tokens, output_tokens,
+            (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
              cache_read_tokens, cache_creation_tokens, cost)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(date, provider, api_key_hash, model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, provider, api_key_hash, model, app, source)
             DO UPDATE SET
                 input_tokens = usage_records.input_tokens + excluded.input_tokens,
                 output_tokens = usage_records.output_tokens + excluded.output_tokens,
                 cache_read_tokens = usage_records.cache_read_tokens + excluded.cache_read_tokens,
                 cache_creation_tokens = usage_records.cache_creation_tokens + excluded.cache_creation_tokens,
                 cost = usage_records.cost + excluded.cost
-        """, (date, provider, key_hash, model, input_tokens, output_tokens,
+        """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
               cache_read_tokens, cache_creation_tokens, cost))
 
         conn.commit()
@@ -89,7 +93,9 @@ class UsageStore:
         self,
         start_date: str,
         end_date: str,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        app: Optional[str] = None,
+        source: Optional[str] = None
     ) -> List[Dict]:
         """Get usage records for date range"""
         conn = sqlite3.connect(self.db_path)
@@ -97,7 +103,7 @@ class UsageStore:
         cursor = conn.cursor()
 
         query = """
-            SELECT date, provider, model,
+            SELECT date, provider, model, app, source,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
                    SUM(cache_read_tokens) as cache_read_tokens,
@@ -111,14 +117,78 @@ class UsageStore:
         if provider:
             query += " AND provider = ?"
             params.append(provider)
+        if app:
+            query += " AND app = ?"
+            params.append(app)
+        if source:
+            query += " AND source = ?"
+            params.append(source)
 
-        query += " GROUP BY date, provider, model ORDER BY date DESC"
+        query += " GROUP BY date, provider, model, app, source ORDER BY date DESC"
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
 
         return [dict(row) for row in rows]
+
+    def get_by_app(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: Optional[str] = None
+    ) -> Dict[str, float]:
+        """Get cost breakdown by app"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT app, SUM(cost) as cost
+            FROM usage_records
+            WHERE date >= ? AND date <= ?
+        """
+        params = [start_date, end_date]
+
+        if provider:
+            query += " AND provider = ?"
+            params.append(provider)
+
+        query += " GROUP BY app ORDER BY cost DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return {row[0]: row[1] for row in rows}
+
+    def get_by_source(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: Optional[str] = None
+    ) -> Dict[str, float]:
+        """Get cost breakdown by source"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT source, SUM(cost) as cost
+            FROM usage_records
+            WHERE date >= ? AND date <= ?
+        """
+        params = [start_date, end_date]
+
+        if provider:
+            query += " AND provider = ?"
+            params.append(provider)
+
+        query += " GROUP BY source ORDER BY cost DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return {row[0]: row[1] for row in rows}
 
     def get_total_cost(
         self,
