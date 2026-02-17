@@ -73,6 +73,8 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     # Generate image with html2image
     hti = Html2Image()
     hti.output_path = str(output_dir)
+    # Use a large viewport to ensure long cards aren't cut off by the browser
+    hti.size = (1000, 2000) 
     hti.screenshot(url=str(html_path), save_as=raw_png_path.name)
     
     # Smart crop: detect content bounds
@@ -82,19 +84,22 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     bg = data[0, 0]  # Background color from top-left
     
     # Find content bounds
+    # Use a slightly lower threshold to catch subtle text/borders at the bottom
+    threshold = 8
     top, bottom, left, right = h, 0, w, 0
     for y in range(h):
         for x in range(w):
             p = data[x, y]
-            if abs(p[0]-bg[0]) > 10 or abs(p[1]-bg[1]) > 10 or abs(p[2]-bg[2]) > 10:
+            if abs(p[0]-bg[0]) > threshold or abs(p[1]-bg[1]) > threshold or abs(p[2]-bg[2]) > threshold:
                 top, bottom = min(top, y), max(bottom, y)
                 left, right = min(left, x), max(right, x)
     
-    # Crop with padding
-    left = max(0, left - 20)
-    top = max(0, top - 20)
-    right = min(w, right + 20)
-    bottom = min(h, bottom + 20)
+    # Crop with generous padding
+    padding = 30
+    left = max(0, left - padding)
+    top = max(0, top - padding)
+    right = min(w, right + padding)
+    bottom = min(h, bottom + padding)
     
     cropped = img.crop((left, top, right, bottom))
     
