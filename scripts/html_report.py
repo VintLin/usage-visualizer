@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate visually appealing HTML reports for LLM cost monitoring - PPT Horizontal Style V3 (Ultra Detail)
+Generate visually appealing HTML reports for LLM cost monitoring - PPT Horizontal Style V3.1 (Fixed Top3 Logic)
 """
 import argparse
 import os
@@ -19,7 +19,7 @@ def generate_html_report(
     end_date: str = None,
     title: str = "AI 消耗"
 ) -> str:
-    """Generate a high-resolution horizontal PPT-style HTML report with full legends and labels"""
+    """Generate a high-resolution horizontal PPT-style HTML report with fixed Top3 model logic"""
     
     today_dt = datetime.now()
     if not start_date:
@@ -27,27 +27,41 @@ def generate_html_report(
     if not end_date:
         end_date = today_dt.strftime("%Y-%m-%d")
     
-    last_30d_start = (today_dt - timedelta(days=29)).strftime("%Y-%m-%d")
+    # 30 days range for trends
+    last_30_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
+    trend_start_date = last_30_dates[0]
     
+    # Comparison range
     requested_start = datetime.strptime(start_date, "%Y-%m-%d")
     requested_end = datetime.strptime(end_date, "%Y-%m-%d")
     period_days = (requested_end - requested_start).days + 1
-    prev_start = (requested_start - timedelta(days=period_days)).strftime("%Y-%m-%d")
-    prev_end = (requested_start - timedelta(days=1)).strftime("%Y-%m-%d")
+    prev_start_date = (requested_start - timedelta(days=period_days)).strftime("%Y-%m-%d")
 
-    all_data = store.get_usage(min(last_30d_start, prev_start), end_date)
+    # Fetch data covering all needed ranges
+    fetch_start = min(trend_start_date, prev_start_date)
+    all_data = store.get_usage(fetch_start, end_date)
     
     daily_total = {}
     daily_models = {}
-    by_model_tokens = {}
-    by_model_cost = {}
-    total_savings = 0
-    prev_period_cost = 0
     
+    # Statistics for the requested period
+    period_model_tokens = {}
+    period_model_cost = {}
+    total_savings = 0
+    
+    # Statistics for the previous period (for growth %)
+    prev_period_cost = 0
+    prev_start_dt = requested_start - timedelta(days=period_days)
+    prev_end_dt = requested_start - timedelta(days=1)
+    
+    # Global statistics over the 30-day trend period to determine TRUE Top 3
+    trend_model_tokens = {}
+
     for record in all_data:
         date = record['date']
         model = record['model']
         
+        # 1. Update daily aggregates for trend lines
         if date not in daily_total: daily_total[date] = {'cost': 0, 'tokens': 0}
         daily_total[date]['cost'] += record['cost']
         daily_total[date]['tokens'] += record['input_tokens'] + record['output_tokens']
@@ -57,18 +71,29 @@ def generate_html_report(
         daily_models[date][model]['cost'] += record['cost']
         daily_models[date][model]['tokens'] += record['input_tokens'] + record['output_tokens']
         
+        # 2. Update stats for the requested report period
         if start_date <= date <= end_date:
-            by_model_tokens[model] = by_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
-            by_model_cost[model] = by_model_cost.get(model, 0) + record['cost']
+            period_model_tokens[model] = period_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
+            period_model_cost[model] = period_model_cost.get(model, 0) + record['cost']
             total_savings += record.get('savings', 0)
             
-        if prev_start <= date <= prev_end:
+        # 3. Update stats for the trend period (to pick Top 3 models)
+        if trend_start_date <= date <= end_date:
+            trend_model_tokens[model] = trend_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
+
+        # 4. Update stats for growth comparison
+        if prev_start_date <= date <= prev_end_dt.strftime("%Y-%m-%d"):
             prev_period_cost += record['cost']
 
-    total_cost = sum(by_model_cost.values())
-    total_tokens = sum(by_model_tokens.values())
+    # Final Totals
+    total_cost = sum(period_model_cost.values())
+    total_tokens = sum(period_model_tokens.values())
     days_count = len(set(r['date'] for r in all_data if start_date <= r['date'] <= end_date)) or 1
     
+    # Correct Top 3 Selection: Based on the 30-day Trend period
+    top_trend_models = sorted(trend_model_tokens.keys(), key=lambda x: -trend_model_tokens[x])[:3]
+    
+    # Growth calculation
     growth_html = ""
     if prev_period_cost > 0:
         growth_pct = ((total_cost - prev_period_cost) / prev_period_cost) * 100
@@ -76,20 +101,16 @@ def generate_html_report(
         symbol = "↑" if growth_pct > 0 else "↓"
         growth_html = f'<span style="color:{color};font-size:18px;margin-left:12px;font-weight:600">{symbol}{abs(growth_pct):.1f}%</span>'
 
-    top_trend_models = sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:3]
-    # Colors: Green(Total), Blue, Orange, Purple
+    # Trend SVG configuration
     colors = ["#10b981", "#3b82f6", "#f59e0b", "#a855f7"]
-
     def fmt_tokens(t):
         if t >= 1000000: return f"{t/1000000:.1f}M"
         if t >= 1000: return f"{t/1000:.1f}K"
         return str(int(t))
-    
     def fmt_cost(c): return f"${c:.2f}"
 
     def get_trend_svg(dates, key, width=450, height=120):
         max_val = max([daily_total.get(d, {}).get(key, 0) for d in dates] or [1]) or 1
-        
         svg_content = f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="overflow:visible;display:block">'
         svg_content += '<defs>'
         for i, color in enumerate(colors):
@@ -107,7 +128,7 @@ def generate_html_report(
         svg_content += f'<path d="M{path} L{width},{height} L0,{height} Z" fill="url(#grad-{key}-0)" />'
         svg_content += f'<path d="M{path}" fill="none" stroke="{colors[0]}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />'
 
-        # Draw model lines
+        # Draw model lines (Top 3 models for the WHOLE 30d period)
         for idx, m in enumerate(top_trend_models):
             m_points = []
             for i, d in enumerate(dates):
@@ -123,12 +144,9 @@ def generate_html_report(
         return svg_content
 
     last_7_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
-    last_30_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
-    
     avg_unit_cost = (total_cost / total_tokens * 1000000) if total_tokens > 0 else 0
     daily_avg_cost = (total_cost / days_count) if days_count > 0 else 0
 
-    # Clean model names for display
     def clean_m(m):
         for k in ['MiniMax', 'Claude', 'Gemini', 'GPT']:
             if k.lower() in m.lower(): return k
@@ -143,7 +161,7 @@ def generate_html_report(
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d;color:#fff">
     <div style="width:1080px;margin:0 auto;padding:40px;display:flex;flex-direction:column;gap:24px">
         
-        <!-- Header Row -->
+        <!-- Header -->
         <div style="display:flex;gap:24px">
             <div style="flex:2;background:linear-gradient(135deg,#059669,#10b981);border-radius:24px;padding:32px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3)">
                 <div>
@@ -173,14 +191,12 @@ def generate_html_report(
             </div>
         </div>
 
-        <!-- Main Body Row -->
+        <!-- Body -->
         <div style="display:flex;gap:24px">
-            
-            <!-- Left: Trends with Legend -->
+            <!-- Left: Trends -->
             <div style="flex:1.2;background:#1a1a1a;border-radius:24px;padding:32px;border:1px solid #2a2a2a">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:32px">
                     <div style="font-size:18px;font-weight:700;color:#10b981">Usage Trends (30D)</div>
-                    <!-- Legend -->
                     <div style="display:flex;gap:12px;font-size:11px">
                         <div style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:3px;background:{colors[0]}"></span>Total</div>
                         {" ".join([f'<div style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:0;border-top:2px dashed {colors[i+1]}"></span>{clean_m(m)}</div>' for i, m in enumerate(top_trend_models)])}
@@ -204,25 +220,23 @@ def generate_html_report(
                 </div>
             </div>
 
-            <!-- Right Column -->
+            <!-- Right -->
             <div style="flex:1;display:flex;flex-direction:column;gap:24px">
-                <!-- Efficiency -->
                 <div style="background:#1a1a1a;border-radius:24px;padding:32px;border:1px solid #2a2a2a;flex:1.2">
                     <div style="font-size:18px;font-weight:700;margin-bottom:24px;color:#10b981">Model Efficiency Metrics</div>
                     { "".join([f'''
                     <div style="margin-bottom:20px">
                         <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px">
                             <span style="color:#10b981;font-weight:600">{m}</span>
-                            <span style="font-weight:600">{fmt_tokens(by_model_tokens[m])} <span style="color:#6b7280;font-weight:400;font-size:12px">(${ (by_model_cost[m]/by_model_tokens[m]*1000000) if by_model_tokens[m]>0 else 0:.2f}/M)</span></span>
+                            <span style="font-weight:600">{fmt_tokens(period_model_tokens[m])} <span style="color:#6b7280;font-weight:400;font-size:12px">(${ (period_model_cost[m]/period_model_tokens[m]*1000000) if period_model_tokens[m]>0 else 0:.2f}/M)</span></span>
                         </div>
                         <div style="height:10px;background:#2a2a2a;border-radius:5px;overflow:hidden">
-                            <div style="height:100%;width:{ (by_model_tokens[m]/total_tokens*100) if total_tokens>0 else 0 }%;background:linear-gradient(90deg,#059669,#10b981)"></div>
+                            <div style="height:100%;width:{ (period_model_tokens[m]/total_tokens*100) if total_tokens>0 else 0 }%;background:linear-gradient(90deg,#059669,#10b981)"></div>
                         </div>
                     </div>
-                    ''' for m in sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:4]]) }
+                    ''' for m in sorted(period_model_tokens.keys(), key=lambda x: -period_model_tokens[x])[:4]]) }
                 </div>
                 
-                <!-- Last 7 Days with labels -->
                 <div style="background:#1a1a1a;border-radius:24px;padding:32px;border:1px solid #2a2a2a;flex:1">
                     <div style="font-size:18px;font-weight:700;margin-bottom:24px;color:#10b981">Last 7 Days Activity</div>
                     <div style="display:flex;gap:12px;align-items:flex-end;height:120px;padding-top:20px">
@@ -233,7 +247,6 @@ def generate_html_report(
         day_tokens = daily_total.get(date, {}).get('tokens', 0)
         h_pct = (day_tokens / max_day_tokens * 100)
         day_label = datetime.strptime(date, "%Y-%m-%d").strftime("%m/%d")
-        
         html += f"""                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px">
                             <div style="font-size:10px;color:#10b981;font-weight:600">{fmt_tokens(day_tokens) if day_tokens>0 else ''}</div>
                             <div style="width:100%;background:#2a2a2a;border-radius:8px;height:100px;position:relative;overflow:hidden">
