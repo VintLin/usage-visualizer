@@ -111,14 +111,17 @@ def generate_html_report(
             display_cost = ""
         else:
             display_tokens = fmt_tokens(day_tokens)
-            display_cost = f"<span style='color:#6b7280;font-size:10px'>{fmt_cost(day_cost)}</span>"
+            display_cost = f"<div style='color:#6b7280;font-size:10px;line-height:1'>{fmt_cost(day_cost)}</div>"
         
-        html += f"""            <div style="display:flex;align-items:center;margin-bottom:10px">
+        html += f"""            <div style="display:flex;align-items:center;margin-bottom:12px">
                 <div style="width:40px;font-size:12px;color:#10b981">{day_label}</div>
-                <div style="flex:1;height:20px;background:#2a2a2a;border-radius:4px;overflow:hidden">
+                <div style="flex:1;height:20px;background:#2a2a2a;border-radius:4px;overflow:hidden;margin-right:10px">
                     <div style="height:100%;width:{bar_width}%;background:linear-gradient(90deg,#059669,#10b981);border-radius:4px"></div>
                 </div>
-                <div style="width:70px;text-align:right;font-size:12px;color:#fff;font-weight:500">{display_tokens} {display_cost}</div>
+                <div style="width:60px;text-align:right;display:flex;flex-direction:column;justify-content:center">
+                    <div style="font-size:12px;color:#fff;font-weight:500;line-height:1.2">{display_tokens}</div>
+                    {display_cost}
+                </div>
             </div>
 """
     
@@ -132,7 +135,7 @@ def generate_html_report(
     for model in sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:5]:
         cost = by_model.get(model, 0)
         tokens = by_model_tokens[model]
-        pct = (cost / total_cost * 100) if total_cost > 0 else 0
+        pct = (tokens / total_tokens * 100) if total_tokens > 0 else 0
         bar_width = pct
         
         # Model display name
