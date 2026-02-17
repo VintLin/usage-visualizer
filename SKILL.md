@@ -37,14 +37,21 @@ python3 scripts/html_report.py
 ## ⚡️ Usage
 
 **When user asks about usage:**
-1. Run `fetch_usage.py --today` to fetch latest session data
-2. Generate image report with `html_report.py`
-3. Send to user
+Simply run the generate script and send the result:
 
 ```bash
-# Auto update + generate report
-python3 scripts/fetch_usage.py --today && python3 scripts/html_report.py
+cd "/Users/voter/.openclaw/workspace/001 [Projects]/Skill Create/llm-cost-monitor"
+python3 scripts/generate_report_image.py --today
+
+# Then send the generated image from workspace (auto-detected if OPENCLAW_WORKSPACE is set)
+# or check the output log for the exact path.
 ```
+
+The script automatically:
+1. Fetches latest usage data
+2. Generates HTML report
+3. Converts to PNG with smart cropping
+4. Saves to workspace or project root (auto-detects trusted directories)
 
 ### Output Modes
 
