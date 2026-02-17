@@ -73,8 +73,8 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     # Generate image with html2image
     hti = Html2Image()
     hti.output_path = str(output_dir)
-    # Use a large viewport to ensure long cards aren't cut off by the browser
-    hti.size = (1000, 2000) 
+    # PPT-style landscape viewport
+    hti.size = (1200, 800) 
     hti.screenshot(url=str(html_path), save_as=raw_png_path.name)
     
     # Smart crop: detect content bounds
