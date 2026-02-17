@@ -1,242 +1,150 @@
 ---
 name: llm-cost-monitor
-description: Track LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual HTML reports. No config required - works out of the box.
+description: Track LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual PPT-style reports. No config required.
 metadata: {"openclaw":{"emoji":"💰","requires":{"bins":["python3"]}}}
 ---
 
 # LLM Cost Monitor
 
-Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual HTML reports.
+Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and high-resolution visual reports.
 
 ## ✨ Features
 
-- **No config required!** - Just install and run
-- **Automatic OpenClaw detection** - Reads session logs automatically
-- **Accurate cost tracking** - Uses real cost data when available, calculates otherwise
-- **Cache token support** - Tracks Anthropic prompt caching (read/write)
-- **SQLite persistence** - Historical data stored locally
-- **Daily/weekly/monthly reports** - Multiple time periods
-- **Budget alerts** - Monitor your spending with exit codes
-- **Visual HTML reports** - Generate images for sharing
-- **Multi-provider support** - Anthropic, OpenAI, Gemini, MiniMax
+- **Zero Config** - Automatically detects OpenClaw and Clawdbot session logs.
+- **Accurate Tracking** - Supports real cost data and manual calculation with latest pricing.
+- **Smart Analytics** - Tracks Anthropic prompt caching (read/write) and calculates **Savings**.
+- **PPT-Style Reports** - Generates high-res horizontal reports with 30D SVG trend lines and model efficiency metrics.
+- **Idempotent Storage** - SQLite backend ensures data consistency even after full re-scans.
+- **Budget Guard** - Built-in alerting system for daily, weekly, and monthly spending.
 
 ## 🚀 Quick Start
 
 ```bash
-# Clone or install
+# Clone or install to your OpenClaw skills directory
 git clone https://github.com/VintLin/llm-cost-monitor.git
 cd llm-cost-monitor
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run - generates image report by default
-python3 scripts/html_report.py
+# Sync all historical data (First run)
+python3 scripts/fetch_usage.py --full
+
+# Generate your first visual report
+python3 scripts/generate_report_image.py --today
 ```
 
 ## ⚡️ Usage
 
-**When user asks about usage:**
-Simply run the generate script and send the result:
+**To view your usage report:**
+Simply run the image generator. It automatically fetches today's data before rendering.
 
 ```bash
-cd "/Users/voter/.openclaw/workspace/001 [Projects]/Skill Create/llm-cost-monitor"
+# From the skill directory:
 python3 scripts/generate_report_image.py --today
 
-# Then send the generated image from workspace (auto-detected if OPENCLAW_WORKSPACE is set)
-# or check the output log for the exact path.
+# Or for a weekly view:
+python3 scripts/generate_report_image.py --period week
 ```
 
-The script automatically:
-1. Fetches latest usage data
-2. Generates HTML report
-3. Converts to PNG with smart cropping
-4. Saves to workspace or project root (auto-detects trusted directories)
+The script will:
+1. Fetch latest usage from session logs.
+2. Calculate costs and cache savings.
+3. Generate a PPT-style horizontal HTML report.
+4. Convert to a cropped PNG saved to your workspace (e.g., `~/llm-cost-report.png`).
 
 ### Output Modes
 
 | Scenario | Command | Output |
 |----------|---------|--------|
-| **Default** | `html_report.py` | 📊 Image → user's default channel |
-| User wants text | `report.py` | 📝 Text → user's default channel |
-| User wants JSON | `report.py --json` | 📋 JSON → user's default channel |
+| **Visual (Default)** | `generate_report_image.py` | 📊 High-res PNG → Workspace |
+| Text Summary | `report.py` | 📝 Markdown Text → Console |
+| Raw Data | `report.py --json` | 📋 JSON → Console |
 
-### Available Commands
+## 🔧 Available Commands
 
+### 1. Data Fetching
 ```bash
-# Fetch usage data from OpenClaw sessions
-python3 scripts/fetch_usage.py                    # Today's usage
-python3 scripts/fetch_usage.py --yesterday         # Yesterday
-python3 scripts/fetch_usage.py --last-days 7      # Last 7 days
-python3 scripts/fetch_usage.py --full             # Full historical scan (Deep Sync)
-
-# Text reports
-python3 scripts/report.py                         # Today's report
-python3 scripts/report.py --period yesterday       # Yesterday
-python3 scripts/report.py --period week           # This week
-python3 scripts/report.py --period month          # This month
-python3 scripts/report.py --json                   # JSON output
-
-# Visual HTML report (generate image)
-python3 scripts/html_report.py                    # Generate HTML
-python3 scripts/html_report.py --start 2026-01-01 --end 2026-01-31
-
-# Budget alerts
-python3 scripts/alert.py --budget-usd 50         # Check $50 budget (exit code 2 on breach)
-python3 scripts/alert.py --budget-usd 100 --mode warn  # Just warn, don't exit
-python3 scripts/alert.py --budget-usd 10 --period week   # Check weekly budget
+python3 scripts/fetch_usage.py --today       # Incremental sync (Today)
+python3 scripts/fetch_usage.py --last-days 7 # Sync last week
+python3 scripts/fetch_usage.py --full        # Full historical re-scan (Idempotent)
 ```
 
-## 📊 Data Dimensions
+### 2. Reporting
+```bash
+python3 scripts/report.py --period today     # Today's text report
+python3 scripts/report.py --period week      # Weekly text summary
+python3 scripts/report.py --json             # Output raw JSON for integrations
+```
 
-The tracker stores and analyzes:
+### 3. Visualizations
+```bash
+python3 scripts/generate_report_image.py --today       # Today's PPT card
+python3 scripts/generate_report_image.py --period week # Weekly PPT card
+```
+
+### 4. Budget Alerts
+```bash
+python3 scripts/alert.py --budget-usd 10 --period today  # Exit code 2 if exceeded
+python3 scripts/alert.py --budget-usd 50 --mode warn     # Log warning only
+```
+
+## 📊 Data Schema (SQLite)
 
 | Field | Description |
 |-------|-------------|
-| `date` | Usage date |
-| `provider` | API provider (anthropic, openai, gemini, etc.) |
-| `model` | Model name |
-| `app` | Application (openclaw, clawdbot) |
-| `source` | Data source (session, manual, api) |
-| `input_tokens` | Input tokens consumed |
-| `output_tokens` | Output tokens generated |
-| `cache_read_tokens` | Tokens read from cache (90% discount) |
-| `cache_creation_tokens` | Tokens written to cache |
-| `cost` | Calculated cost in USD |
-
-## 💾 SQLite Storage
-
-Data is stored at `~/.llm-cost-monitor/usage.db`
-
-### Query Examples
-
-```python
-from scripts.store import UsageStore
-
-store = UsageStore()
-
-# Get today's cost
-cost = store.get_total_cost("2026-02-17", "2026-02-17")
-
-# Get tokens summary (including cache)
-tokens = store.get_tokens_summary("2026-02-01", "2026-02-17")
-# Returns: {input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, total_cost}
-
-# Get daily breakdown
-daily = store.get_daily_summary("2026-02-01", "2026-02-17")
-# Returns: [{date, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost}, ...]
-
-# Get by model
-by_model = store.get_cost_by_model("2026-02-01", "2026-02-17")
-# Returns: {"claude-opus-4": 45.50, "gpt-4o": 23.20, ...}
-
-# Get by app
-by_app = store.get_by_app("2026-02-01", "2026-02-17")
-# Returns: {"openclaw": 100.50, "clawdbot": 20.30}
-
-# Get by source
-by_source = store.get_by_source("2026-02-01", "2026-02-17")
-# Returns: {"session": 120.80}
-```
-
-## 🔔 Budget Alerts
-
-Integrate with cron or HEARTBEAT for automated monitoring:
-
-```bash
-# Check daily budget - exits with code 2 if exceeded
-python3 scripts/alert.py --budget-usd 10 --period today
-
-# Check weekly budget - warn only (no exit)
-python3 scripts/alert.py --budget-usd 50 --period week --mode warn
-
-# Check monthly budget
-python3 scripts/alert.py --budget-usd 100 --period month
-```
-
-### Exit Codes
-
-- `0` - Within budget
-- `2` - Budget exceeded (use in cron to trigger alerts)
-
-## 🖼️ Visual Reports
-
-Generate HTML reports that can be converted to images:
-
-```bash
-# Generate HTML report
-python3 scripts/html_report.py --output /tmp/report.html
-
-# The HTML uses minimal inline styles and can be converted to PNG
-# using html2image or similar tools
-```
+| `date` | ISO Date (YYYY-MM-DD) |
+| `provider` | Model provider (Anthropic, OpenAI, Gemini, etc.) |
+| `model` | Specific model name |
+| `input_tokens` | Prompt tokens consumed |
+| `output_tokens` | Completion tokens generated |
+| `cache_read_tokens` | Tokens retrieved from cache (Savings applied) |
+| `cost` | Total calculated cost in USD |
+| `savings` | Estimated money saved via prompt caching |
 
 ## 📁 Project Structure
 
 ```
 llm-cost-monitor/
-├── SKILL.md                    # Skill definition
-├── README.md                   # This file
-├── requirements.txt             # Python dependencies
-├── config/
-│   └── config.yaml.example    # Optional config template
+├── assets/                     # Versioned screenshots and assets
+├── config/                     # Configuration templates
+├── examples/                   # Usage examples and sample reports
 ├── scripts/
-│   ├── fetch_usage.py         # Fetch usage from sessions
-│   ├── calc_cost.py           # Cost calculation with pricing
-│   ├── store.py               # SQLite storage
-│   ├── report.py              # Text reports
-│   ├── html_report.py         # Visual HTML reports
-│   ├── alert.py               # Budget alerts
-│   └── notify.py             # Multi-channel notification
-└── examples/
-    ├── report-sample.png       # Sample image output
-    └── cron_example.sh         # Cron examples
+│   ├── fetch_usage.py          # Log parser and sync engine
+│   ├── calc_cost.py            # Pricing logic and savings calculator
+│   ├── store.py                # SQLite database interface
+│   ├── report.py               # Text/JSON reporter
+│   ├── html_report.py          # PPT-style HTML template engine
+│   ├── generate_report_image.py # Image renderer (html2image + PIL)
+│   ├── alert.py                # Budget monitor
+│   └── notify.py               # Notification dispatcher
+├── SKILL.md                    # Skill definition
+└── README.md                   # Project documentation
 ```
 
-## 🤖 Automation
+## 🤖 OpenClaw Integration
 
-### Cron Job Example
-
-```bash
-# Run daily at 9 AM - fetch and check budget
-0 9 * * * cd /path/to/llm-cost-monitor && python3 scripts/fetch_usage.py --yesterday && python3 scripts/alert.py --budget-usd 10 --period yesterday || echo "Budget exceeded!"
-```
-
-### OpenClaw HEARTBEAT Integration
-
-Add to your HEARTBEAT.md:
-
-```markdown
-### LLM Cost Check (daily)
-- Run: python3 scripts/alert.py --budget-usd 10 --period yesterday --mode warn
-- If exit code 2, send alert to user
-```
-
-### OpenClaw Cron
+### Automated Daily Report (Cron)
+Add this to your OpenClaw cron configuration:
 
 ```json
 {
-  "name": "llm-cost-weekly-report",
-  "schedule": {"kind": "cron", "expr": "0 9 * * 1", "tz": "Asia/Shanghai"},
-  "payload": {"kind": "agentTurn", "message": "Run fetch_usage.py && html_report.py"},
-  "sessionTarget": "isolated",
-  "delivery": {"mode": "announce"}
+  "name": "daily-cost-report",
+  "schedule": {"kind": "cron", "expr": "0 23 * * *", "tz": "Asia/Shanghai"},
+  "payload": {
+    "kind": "agentTurn", 
+    "message": "Run generate_report_image.py --today and send the resulting PNG from my workspace."
+  },
+  "sessionTarget": "isolated"
 }
 ```
 
 ## 📝 Requirements
 
 - Python 3.8+
-- pyyaml
-- requests
-- html2image (for visual reports)
-
-## 🔧 How It Works
-
-1. **Finds session files**: `~/.openclaw/agents/*/sessions/*.jsonl`
-2. **Parses usage data**: Extracts tokens, cache, cost from each call (supports historical timestamp extraction)
-3. **Stores in SQLite**: Persists historical data locally with idempotency (updates on conflict)
-4. **Generates reports**: Text or HTML output
+- `html2image` (Browser-based rendering)
+- `Pillow` (Smart cropping and image processing)
+- `PyYAML` (Config parsing)
 
 ## 📄 License
 
