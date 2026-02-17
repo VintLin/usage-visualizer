@@ -107,8 +107,15 @@ def generate_html_report(
     last_7_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
     avg_unit_cost = (total_cost / total_tokens * 1000000) if total_tokens > 0 else 0
     daily_avg_cost = (total_cost / days_count) if days_count > 0 else 0
-    growth_pct_val = ((total_cost - prev_period_cost) / prev_period_cost * 100) if prev_period_cost > 0 else 0
-    growth_html = f'<span style="color:{"#ef4444" if growth_pct_val>0 else "#10b981"};font-size:16px;margin-left:10px;font-weight:600">{"↑" if growth_pct_val>0 else "↓"}{abs(growth_pct_val):.1f}%</span>'
+    
+    growth_html = ""
+    if prev_period_cost > 0:
+        growth_pct_val = ((total_cost - prev_period_cost) / prev_period_cost * 100)
+        # Use high-contrast colors for visibility on gradient background
+        # White text on translucent dark background for maximum readability
+        color = "#ff4d4f" if growth_pct_val > 0 else "#b7eb8f"
+        symbol = "↑" if growth_pct_val > 0 else "↓"
+        growth_html = f'<span style="background:rgba(0,0,0,0.25);color:{color};padding:2px 10px;border-radius:100px;font-size:14px;margin-left:12px;font-weight:700;display:inline-flex;align-items:center">{symbol}{abs(growth_pct_val):.1f}%</span>'
 
     def clean_m(m):
         for k in ['MiniMax', 'Claude', 'Gemini', 'GPT']:
@@ -124,8 +131,8 @@ def generate_html_report(
         <!-- Left Column -->
         <div style="width:380px;display:flex;flex-direction:column;gap:20px">
             <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:24px;padding:32px;box-shadow:0 10px 15px rgba(0,0,0,0.3)">
-                <div style="font-size:16px;opacity:0.9;margin-bottom:4px">Usage Summary</div>
-                <div style="font-size:56px;font-weight:800;line-height:1">{fmt_tokens(total_tokens)}</div>
+                <div style="font-size:16px;opacity:0.9;margin-bottom:8px">Usage Summary</div>
+                <div style="font-size:56px;font-weight:800;line-height:1">{fmt_tokens(total_tokens)} <span style="font-size:20px;opacity:0.8;font-weight:600">Tokens</span></div>
                 <div style="display:flex;align-items:baseline;margin-top:12px">
                     <span style="font-size:28px;font-weight:700">{fmt_cost(total_cost)}</span>{growth_html}
                 </div>
