@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate visually appealing HTML reports for LLM cost monitoring - PPT Horizontal Style
+Generate visually appealing HTML reports for LLM cost monitoring - PPT Horizontal Style V2
 """
 import argparse
 import os
@@ -19,7 +19,7 @@ def generate_html_report(
     end_date: str = None,
     title: str = "AI 消耗"
 ) -> str:
-    """Generate a horizontal PPT-style HTML report"""
+    """Generate a horizontal PPT-style HTML report with multi-line trends"""
     
     today_dt = datetime.now()
     if not start_date:
@@ -27,7 +27,7 @@ def generate_html_report(
     if not end_date:
         end_date = today_dt.strftime("%Y-%m-%d")
     
-    # Trend ranges
+    # Trend ranges (30 days)
     last_30d_start = (today_dt - timedelta(days=29)).strftime("%Y-%m-%d")
     
     # Comparison range
@@ -38,23 +38,32 @@ def generate_html_report(
     prev_end = (requested_start - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Fetch data
-    all_data = store.get_usage(min(last_30d_start, prev_start), end_date)
+    all_data = store.get_usage(last_30d_start, end_date)
     
-    daily_summary = {}
+    daily_total = {} # {date: {'cost': 0, 'tokens': 0}}
+    daily_models = {} # {date: {model: {'cost': 0, 'tokens': 0}}}
     by_model_tokens = {}
     by_model_cost = {}
     total_savings = 0
     prev_period_cost = 0
     
+    models_set = set()
+    
     for record in all_data:
         date = record['date']
-        if date not in daily_summary:
-            daily_summary[date] = {'cost': 0, 'tokens': 0}
-        daily_summary[date]['cost'] += record['cost']
-        daily_summary[date]['tokens'] += record['input_tokens'] + record['output_tokens']
+        model = record['model']
+        models_set.add(model)
+        
+        if date not in daily_total: daily_total[date] = {'cost': 0, 'tokens': 0}
+        daily_total[date]['cost'] += record['cost']
+        daily_total[date]['tokens'] += record['input_tokens'] + record['output_tokens']
+        
+        if date not in daily_models: daily_models[date] = {}
+        if model not in daily_models[date]: daily_models[date][model] = {'cost': 0, 'tokens': 0}
+        daily_models[date][model]['cost'] += record['cost']
+        daily_models[date][model]['tokens'] += record['input_tokens'] + record['output_tokens']
         
         if start_date <= date <= end_date:
-            model = record['model']
             by_model_tokens[model] = by_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
             by_model_cost[model] = by_model_cost.get(model, 0) + record['cost']
             total_savings += record.get('savings', 0)
@@ -62,10 +71,9 @@ def generate_html_report(
         if prev_start <= date <= prev_end:
             prev_period_cost += record['cost']
 
-    period_usage = [d for d in all_data if start_date <= d['date'] <= end_date]
-    total_cost = sum(r['cost'] for r in period_usage)
-    total_tokens = sum(r['input_tokens'] + r['output_tokens'] for r in period_usage)
-    days_count = len(set(r['date'] for r in period_usage)) or 1
+    total_cost = sum(by_model_cost.values())
+    total_tokens = sum(by_model_tokens.values())
+    days_count = len(set(r['date'] for r in all_data if start_date <= r['date'] <= end_date)) or 1
     
     growth_html = ""
     if prev_period_cost > 0:
@@ -74,23 +82,45 @@ def generate_html_report(
         symbol = "↑" if growth_pct > 0 else "↓"
         growth_html = f'<span style="color:{color};font-size:14px;margin-left:8px;font-weight:600">{symbol}{abs(growth_pct):.1f}%</span>'
 
-    def get_trend_svg(dates, data_dict, key, width=320, height=40):
-        values = [data_dict.get(d, {}).get(key, 0) for d in dates]
-        max_val = max(values) if values else 1
-        if max_val == 0: max_val = 1
+    # Top models for trend lines (top 3)
+    top_trend_models = sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:3]
+    colors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"]
+
+    def get_trend_svg(dates, key, width=350, height=80):
+        # Calculate max from total for scaling
+        max_val = max([daily_total.get(d, {}).get(key, 0) for d in dates] or [1]) or 1
+        
+        svg_content = f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="overflow:visible;display:block">'
+        svg_content += '<defs>'
+        for i, color in enumerate(colors):
+            svg_content += f'<linearGradient id="grad-{key}-{i}" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:{color};stop-opacity:0.2"/><stop offset="100%" style="stop-color:{color};stop-opacity:0"/></linearGradient>'
+        svg_content += '</defs>'
+
+        # Draw total line first
         points = []
-        for i, val in enumerate(values):
-            x = (i / (len(dates) - 1)) * width if len(dates) > 1 else 0
+        for i, d in enumerate(dates):
+            val = daily_total.get(d, {}).get(key, 0)
+            x = (i / (len(dates) - 1)) * width
             y = height - (val / max_val * height)
             points.append(f"{x:.1f},{y:.1f}")
-        path_data = "L".join(points)
-        if path_data: path_data = "M" + path_data
-        return f"""
-        <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="overflow:visible;display:block">
-            <defs><linearGradient id="grad-{key}" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#10b981;stop-opacity:0.3"/><stop offset="100%" style="stop-color:#10b981;stop-opacity:0"/></linearGradient></defs>
-            <path d="{path_data} L{width},{height} L0,{height} Z" fill="url(#grad-{key})" />
-            <path d="{path_data}" fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-        </svg>"""
+        path = "L".join(points)
+        svg_content += f'<path d="M{path} L{width},{height} L0,{height} Z" fill="url(#grad-{key}-0)" />'
+        svg_content += f'<path d="M{path}" fill="none" stroke="{colors[0]}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />'
+
+        # Draw model lines (top 3)
+        for idx, m in enumerate(top_trend_models):
+            m_points = []
+            for i, d in enumerate(dates):
+                val = daily_models.get(d, {}).get(m, {}).get(key, 0)
+                x = (i / (len(dates) - 1)) * width
+                y = height - (val / max_val * height)
+                m_points.append(f"{x:.1f},{y:.1f}")
+            m_path = "L".join(m_points)
+            m_color = colors[(idx + 1) % len(colors)]
+            svg_content += f'<path d="M{m_path}" fill="none" stroke="{m_color}" stroke-width="1.2" stroke-dasharray="3,2" opacity="0.7" />'
+            
+        svg_content += '</svg>'
+        return svg_content
 
     last_7_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
     last_30_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
@@ -99,7 +129,7 @@ def generate_html_report(
     def fmt_tokens(t):
         if t >= 1000000: return f"{t/1000000:.1f}M"
         if t >= 1000: return f"{t/1000:.1f}K"
-        return str(t)
+        return str(int(t))
 
     avg_unit_cost = (total_cost / total_tokens * 1000000) if total_tokens > 0 else 0
     daily_avg_cost = (total_cost / days_count) if days_count > 0 else 0
@@ -113,9 +143,10 @@ def generate_html_report(
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d;color:#fff">
     <div style="width:840px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px">
         
-        <!-- Header Row -->
+        <!-- Header Row: Aligned Widths -->
         <div style="display:flex;gap:16px">
-            <div style="flex:1.5;background:linear-gradient(135deg,#059669,#10b981);border-radius:20px;padding:24px;display:flex;justify-content:space-between;align-items:center">
+            <!-- Main Stats: Flex 2nd card for alignment -->
+            <div style="flex:2;background:linear-gradient(135deg,#059669,#10b981);border-radius:20px;padding:24px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 10px 15px -3px rgba(0,0,0,0.2)">
                 <div>
                     <div style="font-size:14px;opacity:0.9;margin-bottom:4px">AI Resource Usage</div>
                     <div style="font-size:48px;font-weight:800;line-height:1">{fmt_tokens(total_tokens)}</div>
@@ -130,85 +161,82 @@ def generate_html_report(
                 </div>
             </div>
             
-            <div style="flex:1;background:#1a1a1a;border-radius:20px;padding:20px;display:flex;flex-direction:column;justify-content:center;gap:12px">
+            <div style="flex:1;background:#1a1a1a;border-radius:20px;padding:20px;display:flex;flex-direction:column;justify-content:center;gap:16px;border:1px solid #2a2a2a">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <span style="font-size:12px;color:#6b7280">Unit Cost</span>
-                    <span style="font-size:18px;font-weight:600;color:#10b981">${avg_unit_cost:.2f}/M</span>
+                    <span style="font-size:20px;font-weight:700;color:#10b981">${avg_unit_cost:.2f}/M</span>
                 </div>
                 <div style="height:1px;background:#2a2a2a"></div>
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <span style="font-size:12px;color:#6b7280">Daily Avg</span>
-                    <span style="font-size:18px;font-weight:600;color:#10b981">{fmt_cost(daily_avg_cost)}</span>
+                    <span style="font-size:20px;font-weight:700;color:#10b981">{fmt_cost(daily_avg_cost)}</span>
                 </div>
             </div>
         </div>
 
-        <!-- Main Body Row -->
+        <!-- Body Row -->
         <div style="display:flex;gap:16px">
             
-            <!-- Left Column: Trends -->
-            <div style="flex:1;background:#1a1a1a;border-radius:20px;padding:24px">
-                <div style="font-size:14px;font-weight:600;margin-bottom:20px;color:#10b981">Usage Trends (30D)</div>
-                <div style="margin-bottom:28px">
-                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
-                        <span>Tokens</span>
-                        <span>Trend</span>
+            <!-- Left: High Trends -->
+            <div style="flex:1;background:#1a1a1a;border-radius:20px;padding:24px;display:flex;flex-direction:column;justify-content:space-between;border:1px solid #2a2a2a">
+                <div style="font-size:15px;font-weight:700;margin-bottom:24px;color:#10b981;display:flex;justify-content:space-between;align-items:center">
+                    <span>Usage Trends (30D)</span>
+                    <div style="display:flex;gap:8px;font-size:9px;font-weight:400">
+                        <span style="display:flex;align-items:center;gap:3px"><i style="width:6px;height:6px;background:#10b981;border-radius:50%"></i>Total</span>
+                        <span style="display:flex;align-items:center;gap:3px"><i style="width:6px;height:6px;border:1px dashed #3b82f6;border-radius:50%"></i>Models</span>
                     </div>
-                    {get_trend_svg(last_30_dates, daily_summary, 'tokens', width=350)}
                 </div>
-                <div>
-                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
-                        <span>Cost</span>
-                        <span>Trend</span>
+                
+                <div style="margin-bottom:32px;flex:1">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:12px">
+                        <span>Tokens Consumption</span>
+                        <span>Peak: {fmt_tokens(max([daily_total.get(d, {}).get('tokens', 0) for d in last_30_dates] or [0]))}</span>
                     </div>
-                    {get_trend_svg(last_30_dates, daily_summary, 'cost', width=350)}
+                    {get_trend_svg(last_30_dates, 'tokens', width=355, height=90)}
+                </div>
+                
+                <div style="flex:1">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:12px">
+                        <span>Cost Distribution (USD)</span>
+                        <span>Peak: {fmt_cost(max([daily_total.get(d, {}).get('cost', 0) for d in last_30_dates] or [0]))}</span>
+                    </div>
+                    {get_trend_svg(last_30_dates, 'cost', width=355, height=90)}
                 </div>
             </div>
 
-            <!-- Right Column: Last 7 Days & Models -->
+            <!-- Right: Aligned Height -->
             <div style="flex:1;display:flex;flex-direction:column;gap:16px">
                 <!-- Models -->
-                <div style="background:#1a1a1a;border-radius:20px;padding:20px">
-                    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:#10b981">Model Efficiency</div>
-"""
-    
-    for model in sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:4]:
-        cost = by_model_cost.get(model, 0)
-        tokens = by_model_tokens[model]
-        bar_width = (tokens / total_tokens * 100) if total_tokens > 0 else 0
-        unit_cost = (cost / tokens * 1000000) if tokens > 0 else 0
-        display_name = model
-        for k in ['MiniMax', 'Claude', 'Gemini', 'GPT']:
-            if k.lower() in model.lower(): display_name = k; break
-        
-        html += f"""                    <div style="margin-bottom:14px">
-                        <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
-                            <span style="color:#10b981">{display_name}</span>
-                            <span>{fmt_tokens(tokens)} <span style="color:#6b7280">(${unit_cost:.2f}/M)</span></span>
+                <div style="background:#1a1a1a;border-radius:20px;padding:24px;border:1px solid #2a2a2a;flex:1.2">
+                    <div style="font-size:15px;font-weight:700;margin-bottom:20px;color:#10b981">Model Efficiency</div>
+                    { "".join([f'''
+                    <div style="margin-bottom:18px">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+                            <span style="color:#10b981;font-weight:500">{(m[:10]+'..') if len(m)>10 else m}</span>
+                            <span style="font-weight:600">{fmt_tokens(by_model_tokens[m])} <span style="color:#6b7280;font-weight:400;font-size:11px">(${ (by_model_cost[m]/by_model_tokens[m]*1000000) if by_model_tokens[m]>0 else 0:.2f}/M)</span></span>
                         </div>
-                        <div style="height:6px;background:#2a2a2a;border-radius:3px;overflow:hidden">
-                            <div style="height:100%;width:{bar_width}%;background:#10b981"></div>
+                        <div style="height:8px;background:#2a2a2a;border-radius:4px;overflow:hidden">
+                            <div style="height:100%;width:{ (by_model_tokens[m]/total_tokens*100) if total_tokens>0 else 0 }%;background:linear-gradient(90deg,#059669,#10b981)"></div>
                         </div>
                     </div>
-"""
-    
-    html += """                </div>
+                    ''' for m in sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:4]]) }
+                </div>
                 
                 <!-- 7 Days -->
-                <div style="background:#1a1a1a;border-radius:20px;padding:20px">
-                    <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:#10b981">Last 7 Days</div>
-                    <div style="display:flex;gap:8px;align-items:flex-end;height:60px">
+                <div style="background:#1a1a1a;border-radius:20px;padding:24px;border:1px solid #2a2a2a;flex:1">
+                    <div style="font-size:15px;font-weight:700;margin-bottom:20px;color:#10b981">Last 7 Days</div>
+                    <div style="display:flex;gap:10px;align-items:flex-end;height:80px">
 """
     
-    max_day_tokens = max([daily_summary.get(d, {}).get('tokens', 0) for d in last_7_dates] or [1]) or 1
+    max_day_tokens = max([daily_total.get(d, {}).get('tokens', 0) for d in last_7_dates] or [1]) or 1
     for date in last_7_dates:
-        day_tokens = daily_summary.get(date, {}).get('tokens', 0)
+        day_tokens = daily_total.get(date, {}).get('tokens', 0)
         h_pct = (day_tokens / max_day_tokens * 100)
         day_label = datetime.strptime(date, "%Y-%m-%d").strftime("%m/%d")
         
-        html += f"""                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px">
-                            <div style="width:100%;background:#2a2a2a;border-radius:4px;height:60px;position:relative;overflow:hidden">
-                                <div style="position:absolute;bottom:0;width:100%;height:{h_pct}%;background:#10b981;border-radius:2px"></div>
+        html += f"""                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px">
+                            <div style="width:100%;background:#2a2a2a;border-radius:6px;height:80px;position:relative;overflow:hidden">
+                                <div style="position:absolute;bottom:0;width:100%;height:{h_pct}%;background:linear-gradient(0deg,#059669,#10b981);border-radius:3px"></div>
                             </div>
                             <span style="font-size:10px;color:#6b7280">{day_label}</span>
                         </div>
