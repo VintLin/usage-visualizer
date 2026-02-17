@@ -54,6 +54,7 @@ def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
 
                 # Extract timestamp to filter by date
                 timestamp = data.get("timestamp") or data.get("created_at")
+                record_date = datetime.now().strftime("%Y-%m-%d")
                 if timestamp:
                     try:
                         # Handle various timestamp formats
@@ -125,9 +126,13 @@ def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
                 
                 # If no real cost (None), calculate it
                 if cost is None:
-                    cost = calculate_cost(model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+                    cost_val, savings = calculate_cost(model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+                else:
+                    # If cost provided by API/OpenClaw, we estimate savings for consistent reporting
+                    cost_val = cost
+                    _, savings = calculate_cost(model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
 
-                if input_tokens or output_tokens or cost:
+                if input_tokens or output_tokens or cost_val:
                     usage_records.append({
                         "date": record_date,
                         "provider": provider,
@@ -136,7 +141,8 @@ def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
                         "output_tokens": output_tokens,
                         "cache_read_tokens": cache_read_tokens,
                         "cache_creation_tokens": cache_creation_tokens,
-                        "cost": cost
+                        "cost": cost_val,
+                        "savings": savings
                     })
 
     except Exception as e:
@@ -210,7 +216,8 @@ def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-moni
                 output_tokens=record["output_tokens"],
                 cache_read_tokens=record.get("cache_read_tokens", 0),
                 cache_creation_tokens=record.get("cache_creation_tokens", 0),
-                cost=record["cost"]
+                cost=record["cost"],
+                savings=record.get("savings", 0)
             )
             total_records += 1
 
@@ -262,9 +269,6 @@ def main():
 
     if args.full:
         print("\n🚀 Performing FULL SCAN of all sessions...")
-        # For full scan, we don't pass a specific date to fetch_openclow_usage
-        # But we need to handle the record processing differently inside fetch_openclow_usage
-        # Let's adjust the fetch call
         fetch_openclow_usage(date=None, storage_path=storage_path, force_full=True)
     else:
         # Fetch for specific dates (idempotent)

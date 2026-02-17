@@ -132,7 +132,7 @@ def calculate_cost(
     output_tokens: int = 0,
     cache_read_tokens: int = 0,
     cache_creation_tokens: int = 0
-) -> float:
+) -> Tuple[float, float]:
     """
     Calculate cost for a request
 
@@ -144,14 +144,14 @@ def calculate_cost(
         cache_creation_tokens: Number of cache creation tokens (Anthropic)
 
     Returns:
-        Cost in USD
+        (Cost, Savings) in USD
     """
     pricing = get_pricing(model)
 
     if pricing is None:
         # No pricing available - track and return 0
         UNKNOWN_MODELS.add(model)
-        return 0  # Show 0 when unknown
+        return 0.0, 0.0
 
     # Base cost calculation
     input_price = pricing.get("input", 0) / 1_000_000
@@ -178,7 +178,12 @@ def calculate_cost(
 
     total_cost = input_cost + cache_read_cost + cache_creation_cost + output_cost
 
-    return round(total_cost, 6)
+    # Calculate Savings (What it would have cost without cache)
+    # Savings = (cache_read_tokens * input_price) - cache_read_cost
+    savings = cache_read_tokens * (input_price - cache_read_price)
+    if savings < 0: savings = 0
+
+    return float(round(total_cost, 6)), float(round(savings, 6))
 
 
 def load_pricing_from_file(filepath: str) -> Dict:
@@ -206,5 +211,5 @@ if __name__ == "__main__":
     print("Cost Calculation Test:")
     print("-" * 50)
     for model, inp, out, cache_r, cache_c in test_cases:
-        cost = calculate_cost(model, inp, out, cache_r, cache_c)
-        print(f"{model}: {inp} in, {out} out, {cache_r} cache_r, {cache_c} cache_c = ${cost:.4f}")
+        cost, savings = calculate_cost(model, inp, out, cache_r, cache_c)
+        print(f"{model}: {inp} in, {out} out, {cache_r} cache_r, {cache_c} cache_c = ${cost:.4f} (Saved: ${savings:.4f})")

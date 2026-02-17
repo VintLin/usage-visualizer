@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate visually appealing HTML reports for LLM cost monitoring - Minimalist card style with Trend Lines
+Generate visually appealing HTML reports for LLM cost monitoring - Minimalist card style with Trend Lines & Insights
 """
 import argparse
 import os
@@ -19,7 +19,7 @@ def generate_html_report(
     end_date: str = None,
     title: str = "AI 消耗"
 ) -> str:
-    """Generate a minimalist card-style HTML report with trend lines"""
+    """Generate a minimalist card-style HTML report with trend lines and insights"""
     
     today_dt = datetime.now()
     if not start_date:
@@ -30,12 +30,22 @@ def generate_html_report(
     # Trend ranges (30 days for line chart)
     last_30d_start = (today_dt - timedelta(days=29)).strftime("%Y-%m-%d")
     
-    # Fetch all data needed for trends and main report
-    all_data = store.get_usage(last_30d_start, end_date)
+    # Comparison range (previous period)
+    requested_start = datetime.strptime(start_date, "%Y-%m-%d")
+    requested_end = datetime.strptime(end_date, "%Y-%m-%d")
+    period_days = (requested_end - requested_start).days + 1
+    prev_start = (requested_start - timedelta(days=period_days)).strftime("%Y-%m-%d")
+    prev_end = (requested_start - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # Fetch all data needed
+    all_data = store.get_usage(min(last_30d_start, prev_start), end_date)
     
     daily_summary = {}
     by_model_tokens = {}
     by_model_cost = {}
+    total_savings = 0
+    
+    prev_period_cost = 0
     
     for record in all_data:
         date = record['date']
@@ -44,19 +54,33 @@ def generate_html_report(
         daily_summary[date]['cost'] += record['cost']
         daily_summary[date]['tokens'] += record['input_tokens'] + record['output_tokens']
         
-        # Only include data within start_date ~ end_date for model breakdown
+        # Current period stats
         if start_date <= date <= end_date:
             model = record['model']
             by_model_tokens[model] = by_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
             by_model_cost[model] = by_model_cost.get(model, 0) + record['cost']
+            total_savings += record.get('savings', 0)
+            
+        # Previous period stats for comparison
+        if prev_start <= date <= prev_end:
+            prev_period_cost += record['cost']
 
-    # Filtered totals for the requested period
+    # Period totals
     period_usage = [d for d in all_data if start_date <= d['date'] <= end_date]
     total_cost = sum(r['cost'] for r in period_usage)
     total_tokens = sum(r['input_tokens'] + r['output_tokens'] for r in period_usage)
     days_count = len(set(r['date'] for r in period_usage)) or 1
+    
+    # Growth calculation
+    growth_pct = 0
+    growth_html = ""
+    if prev_period_cost > 0:
+        growth_pct = ((total_cost - prev_period_cost) / prev_period_cost) * 100
+        color = "#ef4444" if growth_pct > 0 else "#10b981"
+        symbol = "↑" if growth_pct > 0 else "↓"
+        growth_html = f'<span style="color:{color};font-size:12px;margin-left:8px;font-weight:600">{symbol}{abs(growth_pct):.1f}%</span>'
 
-    # Trend calculation helper (SVG)
+    # Trend SVG helper
     def get_trend_svg(dates, data_dict, key, width=340, height=50):
         values = [data_dict.get(d, {}).get(key, 0) for d in dates]
         max_val = max(values) if values else 0
@@ -84,7 +108,6 @@ def generate_html_report(
         </svg>
         """
 
-    # Prepare chart dates
     last_7_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
     last_30_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
     
@@ -94,6 +117,10 @@ def generate_html_report(
         if t >= 1000: return f"{t/1000:.1f}K"
         return str(t)
 
+    # Footer Stats calculations
+    avg_unit_cost = (total_cost / total_tokens * 1000000) if total_tokens > 0 else 0
+    daily_avg_cost = (total_cost / days_count) if days_count > 0 else 0
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -102,36 +129,44 @@ def generate_html_report(
 </head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d;color:#fff">
     <div style="max-width:380px;margin:0 auto;padding:16px">
-        <!-- Main Card -->
-        <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:16px;padding:24px;margin-bottom:12px">
-            <div style="font-size:14px;opacity:0.9;margin-bottom:4px">Monthly AI Usage</div>
+        <!-- Header Card -->
+        <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:16px;padding:24px;margin-bottom:12px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)">
+            <div style="font-size:14px;opacity:0.9;margin-bottom:4px">AI Resource Usage</div>
             <div style="font-size:42px;font-weight:700">{fmt_tokens(total_tokens)}</div>
-            <div style="font-size:14px;opacity:0.8;margin-top:8px">≈ {fmt_cost(total_cost)}</div>
-            <div style="font-size:12px;opacity:0.6;margin-top:4px">{start_date} ~ {end_date} · {days_count} days</div>
+            <div style="display:flex;align-items:baseline;margin-top:8px">
+                <span style="font-size:18px;opacity:0.9;font-weight:500">≈ {fmt_cost(total_cost)}</span>
+                {growth_html}
+            </div>
+            <div style="font-size:12px;opacity:0.6;margin-top:12px;background:rgba(255,255,255,0.1);display:inline-block;padding:4px 8px;border-radius:6px">
+                {start_date} ~ {end_date} · {days_count} days
+            </div>
+            
+            {"<!-- Savings -->" if total_savings > 0 else ""}
+            {f'<div style="margin-top:16px;font-size:13px;font-weight:600;color:#f0fdf4;display:flex;align-items:center"><span style="background:rgba(255,255,255,0.2);width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-right:6px;font-size:10px">⚡</span>Saved {fmt_cost(total_savings)} via Cache</div>' if total_savings > 0 else ""}
         </div>
 
-        <!-- Trends Section -->
+        <!-- Trend Section -->
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Usage Trends (30D)</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px;color:#10b981">Usage Trends (30D)</div>
             <div style="margin-bottom:24px">
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
-                    <span>Token Trend</span>
+                    <span>Token Consumption</span>
                     <span>Last 30 Days</span>
                 </div>
                 {get_trend_svg(last_30_dates, daily_summary, 'tokens')}
             </div>
             <div>
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
-                    <span>Cost Trend</span>
+                    <span>Cost Distribution</span>
                     <span>Last 30 Days</span>
                 </div>
                 {get_trend_svg(last_30_dates, daily_summary, 'cost')}
             </div>
         </div>
         
-        <!-- Last 7 Days Section -->
+        <!-- Weekly Breakdown -->
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Last 7 Days Breakdown</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Last 7 Days</div>
 """
     
     # Daily bars
@@ -159,9 +194,9 @@ def generate_html_report(
     
     html += """        </div>
         
-        <!-- Model Section -->
+        <!-- Model Efficiency Section -->
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;margin-bottom:16px">By Model (Period)</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Model Efficiency</div>
 """
     
     # Model bars
@@ -170,34 +205,38 @@ def generate_html_report(
         tokens = by_model_tokens[model]
         bar_width = (tokens / total_tokens * 100) if total_tokens > 0 else 0
         
+        # Calculate unit cost
+        unit_cost = (cost / tokens * 1000000) if tokens > 0 else 0
+        
         display_name = model
         for k in ['MiniMax', 'Claude', 'Gemini', 'GPT']:
             if k.lower() in model.lower():
                 display_name = k
                 break
         
-        html += f"""            <div style="margin-bottom:12px">
+        html += f"""            <div style="margin-bottom:16px">
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px">
                     <span style="font-size:13px;color:#10b981">{display_name}</span>
-                    <span style="font-size:13px;color:#fff;font-weight:500">{fmt_tokens(tokens)} <span style="color:#6b7280;font-weight:400">≈{fmt_cost(cost)}</span></span>
+                    <span style="font-size:13px;color:#fff;font-weight:500">{fmt_tokens(tokens)} <span style="color:#6b7280;font-weight:400">({fmt_cost(cost)})</span></span>
                 </div>
-                <div style="height:8px;background:#2a2a2a;border-radius:4px;overflow:hidden">
+                <div style="height:8px;background:#2a2a2a;border-radius:4px;overflow:hidden;margin-bottom:4px">
                     <div style="height:100%;width:{bar_width}%;background:#10b981;border-radius:4px"></div>
                 </div>
+                <div style="font-size:10px;color:#6b7280">${unit_cost:.2f} per 1M tokens</div>
             </div>
 """
     
     html += f"""        </div>
         
-        <!-- Summary Stats -->
+        <!-- Footer Stats -->
         <div style="display:flex;gap:12px">
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
-                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Period Tokens</div>
-                <div style="font-size:18px;font-weight:600">{fmt_tokens(total_tokens)}</div>
+                <div style="font-size:11px;color:#6b7280;margin-bottom:4px">Unit Cost</div>
+                <div style="font-size:16px;font-weight:600;color:#10b981">${avg_unit_cost:.2f}/M</div>
             </div>
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
-                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Daily Avg</div>
-                <div style="font-size:18px;font-weight:600">{fmt_cost(total_cost/days_count)}</div>
+                <div style="font-size:11px;color:#6b7280;margin-bottom:4px">Daily Average</div>
+                <div style="font-size:16px;font-weight:600;color:#10b981">{fmt_cost(daily_avg_cost)}</div>
             </div>
         </div>
     </div>

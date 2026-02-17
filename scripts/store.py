@@ -36,6 +36,7 @@ class UsageStore:
                 cache_read_tokens INTEGER DEFAULT 0,
                 cache_creation_tokens INTEGER DEFAULT 0,
                 cost REAL DEFAULT 0,
+                savings REAL DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(date, provider, api_key_hash, model, app, source)
             )
@@ -63,6 +64,7 @@ class UsageStore:
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
         cost: float = 0.0,
+        savings: float = 0.0,
         incremental: bool = True
     ):
         """Add or update usage record"""
@@ -76,33 +78,35 @@ class UsageStore:
             cursor.execute("""
                 INSERT INTO usage_records
                 (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
-                 cache_read_tokens, cache_creation_tokens, cost)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cache_read_tokens, cache_creation_tokens, cost, savings)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(date, provider, api_key_hash, model, app, source)
                 DO UPDATE SET
                     input_tokens = usage_records.input_tokens + excluded.input_tokens,
                     output_tokens = usage_records.output_tokens + excluded.output_tokens,
                     cache_read_tokens = usage_records.cache_read_tokens + excluded.cache_read_tokens,
                     cache_creation_tokens = usage_records.cache_creation_tokens + excluded.cache_creation_tokens,
-                    cost = usage_records.cost + excluded.cost
+                    cost = usage_records.cost + excluded.cost,
+                    savings = usage_records.savings + excluded.savings
             """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
-                  cache_read_tokens, cache_creation_tokens, cost))
+                  cache_read_tokens, cache_creation_tokens, cost, savings))
         else:
             # Overwrite (for full syncs where we aggregate everything first)
             cursor.execute("""
                 INSERT INTO usage_records
                 (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
-                 cache_read_tokens, cache_creation_tokens, cost)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cache_read_tokens, cache_creation_tokens, cost, savings)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(date, provider, api_key_hash, model, app, source)
                 DO UPDATE SET
                     input_tokens = excluded.input_tokens,
                     output_tokens = excluded.output_tokens,
                     cache_read_tokens = excluded.cache_read_tokens,
                     cache_creation_tokens = excluded.cache_creation_tokens,
-                    cost = excluded.cost
+                    cost = excluded.cost,
+                    savings = excluded.savings
             """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
-                  cache_read_tokens, cache_creation_tokens, cost))
+                  cache_read_tokens, cache_creation_tokens, cost, savings))
 
         conn.commit()
         conn.close()
