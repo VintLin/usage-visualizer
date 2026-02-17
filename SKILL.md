@@ -1,151 +1,112 @@
 ---
-name: llm-cost-monitor
-description: Track LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and visual PPT-style reports. No config required.
-metadata: {"openclaw":{"emoji":"💰","requires":{"bins":["python3"]}}}
+name: usage-visualizer
+description: Advanced usage statistics and high-fidelity visual reporting for OpenClaw. Track token consumption, model efficiency, and prompt caching savings with professional PPT-style cards.
+metadata:
+  openclaw:
+    emoji: "📊"
+    os:
+      - darwin
+      - linux
+    requires:
+      bins:
+        - python3
 ---
 
-# LLM Cost Monitor
+# Usage Visualizer
 
-Track and monitor LLM API usage and costs from OpenClaw sessions with SQLite persistence, budget alerts, and high-resolution visual reports.
+**Usage Visualizer** is a high-fidelity analytics engine for OpenClaw that transforms raw session logs into professional, actionable visual reports. It prioritizes **token usage patterns** and **model efficiency** over simple cost tracking.
 
-## ✨ Features
+## ✨ Key Features
 
-- **Zero Config** - Automatically detects OpenClaw and Clawdbot session logs.
-- **Accurate Tracking** - Supports real cost data and manual calculation with latest pricing.
-- **Smart Analytics** - Tracks Anthropic prompt caching (read/write) and calculates **Savings**.
-- **PPT-Style Reports** - Generates high-res horizontal reports with 30D SVG trend lines and model efficiency metrics.
-- **Idempotent Storage** - SQLite backend ensures data consistency even after full re-scans.
-- **Budget Guard** - Built-in alerting system for daily, weekly, and monthly spending.
+- 📊 **High-Res Visual Reporting** - Generates horizontal PPT-style cards with 30-day SVG trend lines and multi-dimensional charts.
+- ⚡ **Token-First Analytics** - Deep dive into input/output tokens, including Anthropic prompt caching (read/write) performance.
+- 📉 **Efficiency Metrics** - Automatically calculates cost-per-million-tokens and cache savings to optimize your model selection.
+- 🔄 **Zero-Config Sync** - Auto-detects OpenClaw session logs and syncs them into a local SQLite database for fast, idempotent querying.
+- 🔔 **Intelligent Alerting** - Threshold-based monitoring for daily/weekly/monthly usage with flexible notification formats.
+- 🎨 **Beautiful Console Output** - Provides clean, emoji-rich text summaries for quick checks.
 
 ## 🚀 Quick Start
 
 ```bash
-# Clone or install to your OpenClaw skills directory
-git clone https://github.com/VintLin/llm-cost-monitor.git
-cd llm-cost-monitor
+# Clone the repository
+git clone https://github.com/VintLin/usage-visualizer.git
+cd usage-visualizer
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Sync all historical data (First run)
+# Initial full sync of historical logs
 python3 scripts/fetch_usage.py --full
 
-# Generate your first visual report
+# Generate your first visual report (Today)
 python3 scripts/generate_report_image.py --today
 ```
 
-## ⚡️ Usage
+## 📈 Usage Guide
 
-**To view your usage report:**
-Simply run the image generator. It automatically fetches today's data before rendering.
+### Visual Reports
+The visualizer produces high-fidelity PNG images saved directly to your workspace.
 
 ```bash
-# From the skill directory:
+# Today's report card
 python3 scripts/generate_report_image.py --today
 
-# Or for a weekly view:
+# Weekly overview
 python3 scripts/generate_report_image.py --period week
+
+# Last 30 days trend
+python3 scripts/generate_report_image.py --period month
 ```
 
-The script will:
-1. Fetch latest usage from session logs.
-2. Calculate costs and cache savings.
-3. Generate a PPT-style horizontal HTML report.
-4. Convert to a cropped PNG saved to your workspace (e.g., `~/llm-cost-report.png`).
+### Text Summaries
+For a lightweight summary in the console:
 
-### Output Modes
-
-| Scenario | Command | Output |
-|----------|---------|--------|
-| **Visual (Default)** | `generate_report_image.py` | 📊 High-res PNG → Workspace |
-| Text Summary | `report.py` | 📝 Markdown Text → Console |
-| Raw Data | `report.py --json` | 📋 JSON → Console |
-
-## 🔧 Available Commands
-
-### 1. Data Fetching
 ```bash
-python3 scripts/fetch_usage.py --today       # Incremental sync (Today)
-python3 scripts/fetch_usage.py --last-days 7 # Sync last week
-python3 scripts/fetch_usage.py --full        # Full historical re-scan (Idempotent)
+# Current day summary
+python3 scripts/report.py --period today
+
+# Detailed JSON output for integrations
+python3 scripts/report.py --json
 ```
 
-### 2. Reporting
+### Budget & Usage Guards
+Set limits to receive alerts when usage spikes.
+
 ```bash
-python3 scripts/report.py --period today     # Today's text report
-python3 scripts/report.py --period week      # Weekly text summary
-python3 scripts/report.py --json             # Output raw JSON for integrations
+# Alert if daily usage exceeds $10
+python3 scripts/alert.py --budget-usd 10 --period today
 ```
 
-### 3. Visualizations
-```bash
-python3 scripts/generate_report_image.py --today       # Today's PPT card
-python3 scripts/generate_report_image.py --period week # Weekly PPT card
-```
-
-### 4. Budget Alerts
-```bash
-python3 scripts/alert.py --budget-usd 10 --period today  # Exit code 2 if exceeded
-python3 scripts/alert.py --budget-usd 50 --mode warn     # Log warning only
-```
-
-## 📊 Data Schema (SQLite)
-
-| Field | Description |
-|-------|-------------|
-| `date` | ISO Date (YYYY-MM-DD) |
-| `provider` | Model provider (Anthropic, OpenAI, Gemini, etc.) |
-| `model` | Specific model name |
-| `input_tokens` | Prompt tokens consumed |
-| `output_tokens` | Completion tokens generated |
-| `cache_read_tokens` | Tokens retrieved from cache (Savings applied) |
-| `cost` | Total calculated cost in USD |
-| `savings` | Estimated money saved via prompt caching |
-
-## 📁 Project Structure
+## 🛠 Project Structure
 
 ```
-llm-cost-monitor/
-├── assets/                     # Versioned screenshots and assets
+usage-visualizer/
+├── assets/                     # Sample reports and UI assets
 ├── config/                     # Configuration templates
-├── examples/                   # Usage examples and sample reports
 ├── scripts/
-│   ├── fetch_usage.py          # Log parser and sync engine
-│   ├── calc_cost.py            # Pricing logic and savings calculator
-│   ├── store.py                # SQLite database interface
-│   ├── report.py               # Text/JSON reporter
-│   ├── html_report.py          # PPT-style HTML template engine
-│   ├── generate_report_image.py # Image renderer (html2image + PIL)
-│   ├── alert.py                # Budget monitor
-│   └── notify.py               # Notification dispatcher
+│   ├── fetch_usage.py          # Log parser and SQLite sync engine
+│   ├── calc_cost.py            # Model pricing and savings logic
+│   ├── store.py                # Database interface
+│   ├── report.py               # Text/JSON reporting
+│   ├── html_report.py          # HTML/SVG template engine
+│   ├── generate_report_image.py # PNG renderer (headless browser)
+│   └── alert.py                # Monitoring and alert logic
 ├── SKILL.md                    # Skill definition
-└── README.md                   # Project documentation
+└── README.md                   # Full documentation
 ```
 
-## 🤖 OpenClaw Integration
+## 🧠 How It Works
 
-### Automated Daily Report (Cron)
-Add this to your OpenClaw cron configuration:
+1. **Extraction**: Periodically scans `~/.openclaw/agents/*/sessions/*.jsonl` for new messages.
+2. **Standardization**: Maps varied provider metadata into a unified schema (tokens, cache hits, cost).
+3. **Persistence**: Stores normalized data in a local SQLite DB, ensuring syncs are idempotent.
+4. **Rendering**: Uses a local HTML template to render SVG charts and charts, then captures a high-res PNG using a headless renderer.
 
-```json
-{
-  "name": "daily-cost-report",
-  "schedule": {"kind": "cron", "expr": "0 23 * * *", "tz": "Asia/Shanghai"},
-  "payload": {
-    "kind": "agentTurn", 
-    "message": "Run generate_report_image.py --today and send the resulting PNG from my workspace."
-  },
-  "sessionTarget": "isolated"
-}
-```
+## 📝 Troubleshooting
 
-## 📝 Requirements
-
-- Python 3.8+
-- `html2image` (Browser-based rendering)
-- `Pillow` (Smart cropping and image processing)
-- `PyYAML` (Config parsing)
+- **Image Rendering Fails**: Ensure `html2image` and a compatible browser (Chrome/Chromium) are installed. On Linux servers, ensure `Xvfb` or a headless environment is available.
+- **Missing Logs**: Verify that your `OPENCLAW_WORKSPACE` environment variable is correctly set if you are running in a custom directory.
+- **Python Errors**: Ensure Python 3.8+ and all packages in `requirements.txt` are installed.
 
 ## 📄 License
-
 MIT
