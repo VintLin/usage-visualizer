@@ -129,6 +129,7 @@ def parse_openclaw_session(file_path: str, date: str = None) -> List[Dict]:
 
                 if input_tokens or output_tokens or cost:
                     usage_records.append({
+                        "date": record_date,
                         "provider": provider,
                         "model": model,
                         "input_tokens": input_tokens,
@@ -161,9 +162,16 @@ def load_config(config_path: str = "config/config.yaml") -> Dict:
     return {}
 
 
-def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-monitor") -> int:
+def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-monitor", force_full: bool = False) -> int:
     """Fetch usage from OpenClaw sessions (no config needed!)"""
     store = UsageStore(storage_path)
+
+    # If date is specified, clear it first to avoid double counting
+    if date and not force_full:
+        store.clear_records(date=date, source="session")
+    elif force_full:
+        print("Force full scan: clearing all session records first")
+        store.clear_records(source="session")
 
     # Find all session files
     session_files = find_session_files()
@@ -192,7 +200,7 @@ def fetch_openclow_usage(date: str = None, storage_path: str = "~/.llm-cost-moni
                 app = "openclaw"
 
             store.add_usage(
-                date=date or datetime.now().strftime("%Y-%m-%d"),
+                date=record["date"],
                 provider=record["provider"],
                 api_key=api_key,
                 model=record["model"],
@@ -216,6 +224,7 @@ def main():
     parser.add_argument("--today", action="store_true", help="Fetch today's usage")
     parser.add_argument("--yesterday", action="store_true", help="Fetch yesterday's usage")
     parser.add_argument("--last-days", type=int, help="Fetch last N days")
+    parser.add_argument("--full", action="store_true", help="Full scan of all historical sessions")
     parser.add_argument("--openclaw-only", action="store_true", help="Only read OpenClaw sessions (no external APIs)")
     parser.add_argument("--config", type=str, help="Config file path")
     parser.add_argument("--dry-run", action="store_true", help="Don't save to database")
@@ -251,20 +260,27 @@ def main():
 
     storage_path = config.get("storage", {}).get("path", "~/.llm-cost-monitor")
 
-    # Always fetch from OpenClaw (no config needed!)
-    for date in dates:
-        print(f"\n{'='*50}")
-        print(f"Fetching usage for {date}")
-        print('='*50)
+    if args.full:
+        print("\n🚀 Performing FULL SCAN of all sessions...")
+        # For full scan, we don't pass a specific date to fetch_openclow_usage
+        # But we need to handle the record processing differently inside fetch_openclow_usage
+        # Let's adjust the fetch call
+        fetch_openclow_usage(date=None, storage_path=storage_path, force_full=True)
+    else:
+        # Fetch for specific dates (idempotent)
+        for date in dates:
+            print(f"\n{'='*50}")
+            print(f"Fetching usage for {date}")
+            print('='*50)
 
-        if args.openclaw_only or not config.get("providers"):
-            # Default: just OpenClaw sessions
-            fetch_openclow_usage(date, storage_path)
-        else:
-            # TODO: Add external API fetching when config is provided
-            fetch_openclow_usage(date, storage_path)
-            print("\n⚠️ External API fetching not yet implemented")
-            print("Config detected but only OpenClaw sessions are being read")
+            if args.openclaw_only or not config.get("providers"):
+                # Default: just OpenClaw sessions
+                fetch_openclow_usage(date, storage_path)
+            else:
+                # TODO: Add external API fetching when config is provided
+                fetch_openclow_usage(date, storage_path)
+                print("\n⚠️ External API fetching not yet implemented")
+                print("Config detected but only OpenClaw sessions are being read")
 
 
 if __name__ == "__main__":

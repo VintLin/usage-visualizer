@@ -62,7 +62,8 @@ class UsageStore:
         output_tokens: int = 0,
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
-        cost: float = 0.0
+        cost: float = 0.0,
+        incremental: bool = True
     ):
         """Add or update usage record"""
         key_hash = self._hash_key(api_key)
@@ -70,22 +71,56 @@ class UsageStore:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Try to insert, update if exists
-        cursor.execute("""
-            INSERT INTO usage_records
-            (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
-             cache_read_tokens, cache_creation_tokens, cost)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(date, provider, api_key_hash, model, app, source)
-            DO UPDATE SET
-                input_tokens = usage_records.input_tokens + excluded.input_tokens,
-                output_tokens = usage_records.output_tokens + excluded.output_tokens,
-                cache_read_tokens = usage_records.cache_read_tokens + excluded.cache_read_tokens,
-                cache_creation_tokens = usage_records.cache_creation_tokens + excluded.cache_creation_tokens,
-                cost = usage_records.cost + excluded.cost
-        """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
-              cache_read_tokens, cache_creation_tokens, cost))
+        if incremental:
+            # Add to existing (default behavior)
+            cursor.execute("""
+                INSERT INTO usage_records
+                (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
+                 cache_read_tokens, cache_creation_tokens, cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(date, provider, api_key_hash, model, app, source)
+                DO UPDATE SET
+                    input_tokens = usage_records.input_tokens + excluded.input_tokens,
+                    output_tokens = usage_records.output_tokens + excluded.output_tokens,
+                    cache_read_tokens = usage_records.cache_read_tokens + excluded.cache_read_tokens,
+                    cache_creation_tokens = usage_records.cache_creation_tokens + excluded.cache_creation_tokens,
+                    cost = usage_records.cost + excluded.cost
+            """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
+                  cache_read_tokens, cache_creation_tokens, cost))
+        else:
+            # Overwrite (for full syncs where we aggregate everything first)
+            cursor.execute("""
+                INSERT INTO usage_records
+                (date, provider, api_key_hash, model, app, source, input_tokens, output_tokens,
+                 cache_read_tokens, cache_creation_tokens, cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(date, provider, api_key_hash, model, app, source)
+                DO UPDATE SET
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    cache_read_tokens = excluded.cache_read_tokens,
+                    cache_creation_tokens = excluded.cache_creation_tokens,
+                    cost = excluded.cost
+            """, (date, provider, key_hash, model, app, source, input_tokens, output_tokens,
+                  cache_read_tokens, cache_creation_tokens, cost))
 
+        conn.commit()
+        conn.close()
+
+    def clear_records(self, date: Optional[str] = None, source: Optional[str] = None):
+        """Clear records for a specific date or source"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        if date and source:
+            cursor.execute("DELETE FROM usage_records WHERE date = ? AND source = ?", (date, source))
+        elif date:
+            cursor.execute("DELETE FROM usage_records WHERE date = ?", (date,))
+        elif source:
+            cursor.execute("DELETE FROM usage_records WHERE source = ?", (source,))
+        else:
+            cursor.execute("DELETE FROM usage_records")
+            
         conn.commit()
         conn.close()
 
