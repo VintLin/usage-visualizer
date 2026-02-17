@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Advanced usage statistics and high-fidelity visual reporting for OpenClaw. Track token consumption, model efficiency, and prompt caching savings.",
   "author": "VintLin",
   "homepage": "https://github.com/VintLin/usage-visualizer"

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-02-17
+### Fixed
+- Removed redundant generated images from `assets/` directory.
+- Cleaned up project root to ensure only essential files are packaged.
+
 ## [1.0.0] - 2026-02-17
 ### Added
 - Professional horizontal PPT-style reporting.
