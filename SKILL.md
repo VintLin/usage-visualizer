@@ -68,6 +68,7 @@ The script automatically:
 python3 scripts/fetch_usage.py                    # Today's usage
 python3 scripts/fetch_usage.py --yesterday         # Yesterday
 python3 scripts/fetch_usage.py --last-days 7      # Last 7 days
+python3 scripts/fetch_usage.py --full             # Full historical scan (Deep Sync)
 
 # Text reports
 python3 scripts/report.py                         # Today's report
@@ -233,8 +234,8 @@ Add to your HEARTBEAT.md:
 ## 🔧 How It Works
 
 1. **Finds session files**: `~/.openclaw/agents/*/sessions/*.jsonl`
-2. **Parses usage data**: Extracts tokens, cache, cost from each call
-3. **Stores in SQLite**: Persists historical data locally
+2. **Parses usage data**: Extracts tokens, cache, cost from each call (supports historical timestamp extraction)
+3. **Stores in SQLite**: Persists historical data locally with idempotency (updates on conflict)
 4. **Generates reports**: Text or HTML output
 
 ## 📄 License
