@@ -1,6 +1,6 @@
 ---
 name: usage-visualizer
-description: Advanced usage statistics and high-fidelity visual reporting for OpenClaw. Track token consumption, model efficiency, and prompt caching savings with professional PPT-style cards.
+description: Advanced usage statistics and high-fidelity visual reporting for OpenClaw. Trigger when user says usage report/usage stats/用量汇报/用量统计; always sync latest logs first, then generate report.
 metadata:
   openclaw:
     emoji: "📊"
@@ -44,26 +44,36 @@ python3 scripts/generate_report_image.py --today
 
 ## 📈 Usage Guide
 
-### Visual Reports
-The visualizer produces high-fidelity PNG images saved directly to your workspace.
+### Visual Reports (Recommended one-step flow)
+The visualizer should sync logs first, then generate the report image.
 
 ```bash
-# Today's report card
+# Today image report (sync + render)
+python3 scripts/run_usage_report.py --mode image --period today
+
+# Weekly image report (sync + render)
+python3 scripts/run_usage_report.py --mode image --period week
+
+# Monthly image report (sync + render)
+python3 scripts/run_usage_report.py --mode image --period month
+```
+
+Manual split flow (legacy):
+
+```bash
+python3 scripts/fetch_usage.py
 python3 scripts/generate_report_image.py --today
-
-# Weekly overview
-python3 scripts/generate_report_image.py --period week
-
-# Last 30 days trend
-python3 scripts/generate_report_image.py --period month
 ```
 
 ### Text Summaries
 For a lightweight summary in the console:
 
 ```bash
-# Current day summary
-python3 scripts/report.py --period today
+# Current day summary (sync + text)
+python3 scripts/run_usage_report.py --mode text --period today
+
+# Direct report (without auto sync)
+python3 scripts/report.py --period today --text
 
 # Detailed JSON output for integrations
 python3 scripts/report.py --json

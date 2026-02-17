@@ -6,6 +6,8 @@
   "scripts": {
     "fetch": "python3 scripts/fetch_usage.py",
     "report": "python3 scripts/report.py",
+    "report:image": "python3 scripts/run_usage_report.py --mode image --period today",
+    "report:text": "python3 scripts/run_usage_report.py --mode text --period today",
     "alert": "python3 scripts/alert.py"
   },
   "keywords": [
