@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate visually appealing HTML reports for LLM cost monitoring - Minimalist card style
+Generate visually appealing HTML reports for LLM cost monitoring - Minimalist card style with Trend Lines
 """
 import argparse
 import os
@@ -19,99 +19,131 @@ def generate_html_report(
     end_date: str = None,
     title: str = "AI 消耗"
 ) -> str:
-    """Generate a minimalist card-style HTML report"""
+    """Generate a minimalist card-style HTML report with trend lines"""
     
+    today_dt = datetime.now()
     if not start_date:
-        today = datetime.now()
-        start_date = today.replace(day=1).strftime("%Y-%m-%d")
+        start_date = today_dt.replace(day=1).strftime("%Y-%m-%d")
     if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = today_dt.strftime("%Y-%m-%d")
     
-    # Fetch data
-    daily_data = store.get_usage(start_date, end_date)
-    total_cost = store.get_total_cost(start_date, end_date)
-    by_model = store.get_cost_by_model(start_date, end_date)
+    # Trend ranges (30 days for line chart)
+    last_30d_start = (today_dt - timedelta(days=29)).strftime("%Y-%m-%d")
     
-    # Group by date for daily breakdown, also track tokens by model
+    # Fetch all data needed for trends and main report
+    all_data = store.get_usage(last_30d_start, end_date)
+    
     daily_summary = {}
     by_model_tokens = {}
-    for record in daily_data:
+    by_model_cost = {}
+    
+    for record in all_data:
         date = record['date']
         if date not in daily_summary:
-            daily_summary[date] = {'cost': 0, 'input_tokens': 0, 'output_tokens': 0, 'models': {}}
+            daily_summary[date] = {'cost': 0, 'tokens': 0}
         daily_summary[date]['cost'] += record['cost']
-        daily_summary[date]['input_tokens'] += record['input_tokens']
-        daily_summary[date]['output_tokens'] += record['output_tokens']
+        daily_summary[date]['tokens'] += record['input_tokens'] + record['output_tokens']
         
-        model = record['model']
-        if model not in daily_summary[date]['models']:
-            daily_summary[date]['models'][model] = {'cost': 0, 'tokens': 0}
-        daily_summary[date]['models'][model]['cost'] += record['cost']
-        daily_summary[date]['models'][model]['tokens'] += record['input_tokens'] + record['output_tokens']
+        # Only include data within start_date ~ end_date for model breakdown
+        if start_date <= date <= end_date:
+            model = record['model']
+            by_model_tokens[model] = by_model_tokens.get(model, 0) + record['input_tokens'] + record['output_tokens']
+            by_model_cost[model] = by_model_cost.get(model, 0) + record['cost']
+
+    # Filtered totals for the requested period
+    period_usage = [d for d in all_data if start_date <= d['date'] <= end_date]
+    total_cost = sum(r['cost'] for r in period_usage)
+    total_tokens = sum(r['input_tokens'] + r['output_tokens'] for r in period_usage)
+    days_count = len(set(r['date'] for r in period_usage)) or 1
+
+    # Trend calculation helper (SVG)
+    def get_trend_svg(dates, data_dict, key, width=340, height=50):
+        values = [data_dict.get(d, {}).get(key, 0) for d in dates]
+        max_val = max(values) if values else 0
+        if max_val == 0: max_val = 1
         
-        # Track by model overall
-        if model not in by_model_tokens:
-            by_model_tokens[model] = 0
-        by_model_tokens[model] += record['input_tokens'] + record['output_tokens']
+        points = []
+        for i, val in enumerate(values):
+            x = (i / (len(dates) - 1)) * width if len(dates) > 1 else 0
+            y = height - (val / max_val * height)
+            points.append(f"{x:.1f},{y:.1f}")
+        
+        path_data = "L".join(points)
+        if path_data: path_data = "M" + path_data
+        
+        return f"""
+        <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="overflow:visible;display:block">
+            <defs>
+                <linearGradient id="grad-{key}" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#10b981;stop-opacity:0.3" />
+                    <stop offset="100%" style="stop-color:#10b981;stop-opacity:0" />
+                </linearGradient>
+            </defs>
+            <path d="{path_data} L{width},{height} L0,{height} Z" fill="url(#grad-{key})" />
+            <path d="{path_data}" fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+        </svg>
+        """
+
+    # Prepare chart dates
+    last_7_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+    last_30_dates = [(today_dt - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
     
-    dates_with_data = sorted(daily_summary.keys())
-    days_count = len(dates_with_data)
-    total_tokens = sum(d['input_tokens'] + d['output_tokens'] for d in daily_summary.values())
-    
-    # Always show last 7 days
-    today = datetime.now()
-    chart_dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
-    
-    def fmt_cost(c):
-        return f"${c:.2f}"
-    
+    def fmt_cost(c): return f"${c:.2f}"
     def fmt_tokens(t):
-        if t >= 1000000:
-            return f"{t/1000000:.1f}M"
-        elif t >= 1000:
-            return f"{t/1000:.1f}K"
+        if t >= 1000000: return f"{t/1000000:.1f}M"
+        if t >= 1000: return f"{t/1000:.1f}K"
         return str(t)
-    
-    # Build HTML
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>{title}</title>
 </head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d">
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0d0d0d;color:#fff">
     <div style="max-width:380px;margin:0 auto;padding:16px">
-        <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:16px;padding:24px;color:#fff;margin-bottom:12px">
+        <!-- Main Card -->
+        <div style="background:linear-gradient(135deg,#059669,#10b981);border-radius:16px;padding:24px;margin-bottom:12px">
             <div style="font-size:14px;opacity:0.9;margin-bottom:4px">Monthly AI Usage</div>
             <div style="font-size:42px;font-weight:700">{fmt_tokens(total_tokens)}</div>
             <div style="font-size:14px;opacity:0.8;margin-top:8px">≈ {fmt_cost(total_cost)}</div>
             <div style="font-size:12px;opacity:0.6;margin-top:4px">{start_date} ~ {end_date} · {days_count} days</div>
         </div>
-        
+
+        <!-- Trends Section -->
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">Last 7 Days</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Usage Trends (30D)</div>
+            <div style="margin-bottom:24px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
+                    <span>Token Trend</span>
+                    <span>Last 30 Days</span>
+                </div>
+                {get_trend_svg(last_30_dates, daily_summary, 'tokens')}
+            </div>
+            <div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:8px">
+                    <span>Cost Trend</span>
+                    <span>Last 30 Days</span>
+                </div>
+                {get_trend_svg(last_30_dates, daily_summary, 'cost')}
+            </div>
+        </div>
+        
+        <!-- Last 7 Days Section -->
+        <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">Last 7 Days Breakdown</div>
 """
     
-    # Daily bars - show all 7 days
-    daily_costs = [daily_summary.get(d, {}).get('cost', 0) for d in chart_dates]
-    max_daily_cost = max(daily_costs) if daily_costs else 1
-    if max_daily_cost == 0:
-        max_daily_cost = 1
-    
-    for date in chart_dates:
+    # Daily bars
+    max_daily_cost = max([daily_summary.get(d, {}).get('cost', 0) for d in last_7_dates] or [1]) or 1
+    for date in last_7_dates:
         day_cost = daily_summary.get(date, {}).get('cost', 0)
-        day_tokens = daily_summary.get(date, {}).get('input_tokens', 0) + daily_summary.get(date, {}).get('output_tokens', 0)
-        
-        bar_width = (day_cost / max_daily_cost * 100) if max_daily_cost > 0 else 0
+        day_tokens = daily_summary.get(date, {}).get('tokens', 0)
+        bar_width = (day_cost / max_daily_cost * 100)
         day_label = datetime.strptime(date, "%Y-%m-%d").strftime("%m/%d")
         
-        # Show placeholder if no data
-        if day_cost == 0:
-            display_tokens = "-"
-            display_cost = ""
-        else:
-            display_tokens = fmt_tokens(day_tokens)
-            display_cost = f"<div style='color:#6b7280;font-size:10px;line-height:1'>{fmt_cost(day_cost)}</div>"
+        display_tokens = fmt_tokens(day_tokens) if day_tokens > 0 else "-"
+        display_cost = f"<div style='color:#6b7280;font-size:10px;line-height:1'>{fmt_cost(day_cost)}</div>" if day_cost > 0 else ""
         
         html += f"""            <div style="display:flex;align-items:center;margin-bottom:12px">
                 <div style="width:40px;font-size:12px;color:#10b981">{day_label}</div>
@@ -127,28 +159,22 @@ def generate_html_report(
     
     html += """        </div>
         
+        <!-- Model Section -->
         <div style="background:#1a1a1a;border-radius:16px;padding:20px;margin-bottom:12px">
-            <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:16px">By Model</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:16px">By Model (Period)</div>
 """
     
     # Model bars
     for model in sorted(by_model_tokens.keys(), key=lambda x: -by_model_tokens[x])[:5]:
-        cost = by_model.get(model, 0)
+        cost = by_model_cost.get(model, 0)
         tokens = by_model_tokens[model]
-        pct = (tokens / total_tokens * 100) if total_tokens > 0 else 0
-        bar_width = pct
+        bar_width = (tokens / total_tokens * 100) if total_tokens > 0 else 0
         
-        # Model display name
-        if 'MiniMax' in model:
-            display_name = 'MiniMax'
-        elif 'claude' in model.lower():
-            display_name = 'Claude'
-        elif 'gemini' in model.lower():
-            display_name = 'Gemini'
-        elif 'gpt' in model.lower():
-            display_name = 'GPT'
-        else:
-            display_name = model[:12]
+        display_name = model
+        for k in ['MiniMax', 'Claude', 'Gemini', 'GPT']:
+            if k.lower() in model.lower():
+                display_name = k
+                break
         
         html += f"""            <div style="margin-bottom:12px">
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -163,21 +189,21 @@ def generate_html_report(
     
     html += f"""        </div>
         
+        <!-- Summary Stats -->
         <div style="display:flex;gap:12px">
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
-                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Total Tokens</div>
-                <div style="font-size:18px;font-weight:600;color:#fff">{fmt_tokens(total_tokens)}</div>
+                <div style="font-size:12px;color:#10b981;margin-bottom:4px">Period Tokens</div>
+                <div style="font-size:18px;font-weight:600">{fmt_tokens(total_tokens)}</div>
             </div>
             <div style="flex:1;background:#1a1a1a;border-radius:12px;padding:16px;text-align:center">
                 <div style="font-size:12px;color:#10b981;margin-bottom:4px">Daily Avg</div>
-                <div style="font-size:18px;font-weight:600;color:#fff">{fmt_cost(total_cost/days_count) if days_count>0 else '$0'}</div>
+                <div style="font-size:18px;font-weight:600">{fmt_cost(total_cost/days_count)}</div>
             </div>
         </div>
     </div>
 </body>
 </html>
 """
-    
     return html
 
 
