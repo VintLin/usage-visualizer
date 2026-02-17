@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0",
-  "description": "Track and monitor LLM API usage and costs across multiple providers (OpenAI, Anthropic, Gemini)",
+  "version": "1.0.0",
+  "description": "Advanced usage statistics and high-fidelity visual reporting for OpenClaw. Track token consumption, model efficiency, and prompt caching savings.",
   "author": "VintLin",
-  "homepage": "https://github.com/VintLin/llm-cost-monitor"
+  "homepage": "https://github.com/VintLin/usage-visualizer"
 }
