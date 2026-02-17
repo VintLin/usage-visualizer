@@ -73,8 +73,8 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     # Generate image with html2image
     hti = Html2Image()
     hti.output_path = str(output_dir)
-    # PPT-style landscape viewport
-    hti.size = (1200, 800) 
+    # High-resolution PPT viewport (1440p style ratio)
+    hti.size = (1200, 900) 
     hti.screenshot(url=str(html_path), save_as=raw_png_path.name)
     
     # Smart crop: detect content bounds
