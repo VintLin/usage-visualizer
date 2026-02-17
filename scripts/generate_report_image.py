@@ -73,8 +73,8 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     # Generate image with html2image
     hti = Html2Image()
     hti.output_path = str(output_dir)
-    # High-resolution PPT viewport (1440p style ratio)
-    hti.size = (1200, 900) 
+    # High-resolution PPT viewport (1440p style ratio, increased height for safety)
+    hti.size = (1200, 1000) 
     hti.screenshot(url=str(html_path), save_as=raw_png_path.name)
     
     # Smart crop: detect content bounds
@@ -85,7 +85,7 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
     
     # Find content bounds
     # Use a slightly lower threshold to catch subtle text/borders at the bottom
-    threshold = 8
+    threshold = 5
     top, bottom, left, right = h, 0, w, 0
     for y in range(h):
         for x in range(w):
@@ -94,12 +94,13 @@ def generate_image(start_date: str = None, end_date: str = None, output_path: st
                 top, bottom = min(top, y), max(bottom, y)
                 left, right = min(left, x), max(right, x)
     
-    # Crop with generous padding
-    padding = 30
-    left = max(0, left - padding)
-    top = max(0, top - padding)
-    right = min(w, right + padding)
-    bottom = min(h, bottom + padding)
+    # Crop with generous padding to ensure rounded corners and shadows are visible
+    padding_x = 40
+    padding_y = 50
+    left = max(0, left - padding_x)
+    top = max(0, top - padding_y)
+    right = min(w, right + padding_x)
+    bottom = min(h, bottom + padding_y)
     
     cropped = img.crop((left, top, right, bottom))
     
